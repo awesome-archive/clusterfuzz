@@ -11,11 +11,11 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from __future__ import print_function
+"""Uses polymer-bundler to combine resources to reduce number of requests."""
 
 import multiprocessing
 import os
+import subprocess
 import sys
 
 APPENGINE_DIRECTORY = os.path.join(
@@ -36,9 +36,12 @@ def build_file(filename):
   """Build a single file using polymer-bundler."""
   input_filename = os.path.join('private', 'templates', filename)
   output_filename = os.path.join('templates', filename)
-  os.system('polymer-bundler --inline-scripts --inline-css --strip-comments '
-            '--out-file={output_filename} {input_filename}'.format(
-                output_filename=output_filename, input_filename=input_filename))
+  subprocess.run(
+      [
+          'polymer-bundler', '--inline-scripts', '--inline-css',
+          '--strip-comments', f'--out-file={output_filename}', input_filename
+      ],
+      check=True)
 
   if os.path.exists(output_filename) and os.path.getsize(output_filename):
     return True
@@ -48,6 +51,7 @@ def build_file(filename):
 
 
 def main():
+  """Use polymer-bundler to compile templates."""
   os.chdir(APPENGINE_DIRECTORY)
 
   bundled_change_times = get_file_modified_times('templates')
@@ -63,7 +67,7 @@ def main():
     os.mkdir('templates')
 
   template_names = os.listdir(os.path.join('private', 'templates'))
-  pool = multiprocessing.Pool(max(multiprocessing.cpu_count() / 2, 1))
+  pool = multiprocessing.Pool(max(multiprocessing.cpu_count() // 2, 1))
   result = pool.map(build_file, template_names)
 
   if not all(result):

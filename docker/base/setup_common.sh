@@ -13,16 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Set up mock metadata server.
-if [[ -n "$LOCAL_METADATA_SERVER" ]]; then
-  ip addr add 169.254.169.254/32 dev lo
-  socat TCP-LISTEN:80,fork,reuseaddr TCP:$LOCAL_METADATA_SERVER:$LOCAL_METADATA_PORT &
-  echo "127.0.0.1 metadata metadata.google.internal" >> /etc/hosts
-fi
+source /data/setup_mock_metadata.sh
 
 # Create user with matching UID as host
-export HOST_UID=${HOST_UID:-1337}
-useradd -mU -G nopwsudo -u $HOST_UID $USER
+if [[ "$USER" != "root" ]]
+then
+  export HOST_UID=${HOST_UID:-1337}
+  useradd -mU -G nopwsudo -u $HOST_UID $USER
+fi
 
 mkdir -p $BOT_TMPDIR
 chmod 777 $BOT_TMPDIR
@@ -32,18 +30,33 @@ export HOSTNAME=${HOSTNAME:-$(curl --header "Metadata-Flavor: Google" http://met
 # Setup PREEMPTIBLE flag based on hostname.
 if [[ $HOSTNAME =~ "-pre-" ]]
 then
-    export PREEMPTIBLE=True
+  export PREEMPTIBLE=True
 fi
 
+is_truthy() {
+  [[ "$1" =~ ^([Tt]rue|1)$ ]]
+}
+
 # Make sure mounted volume doesn't have noexec,nosuid,nodev
-mount /mnt/scratch0 -o remount,exec,suid,dev
+# Running this in k8s or swarming environment will cause mounting errors
+should_mount() {
+  # Skip if running in Kubernetes or as a Swarming Job
+  if is_truthy "$IS_K8S_ENV" || is_truthy "$SWARMING_BOT"; then
+    return 1
+  fi
+
+  return 0
+}
+
+if should_mount; then
+  mount /mnt/scratch0 -o remount,exec,suid,dev
+fi
 
 # Prevent /dev/random hangs.
-rm /dev/random && ln -s /dev/urandom /dev/random
-
-# Running without credentials will cause this to fail.
-if [[ -z "$LOCAL_SRC" ]]; then
-  service google-fluentd restart
+if [[ -z "$DISABLE_DEV_RANDOM_RENAME" ]]
+then
+  rm /dev/random
+  ln -s /dev/urandom /dev/random
 fi
 
 # Prevent anything from being written to downloads directory.

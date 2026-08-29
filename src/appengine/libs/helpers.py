@@ -14,31 +14,29 @@
 """helper.py is a kitchen sink. It contains static methods that are used by
    multiple handlers."""
 
+import difflib
 import logging
 import sys
 import traceback
 
-from google.appengine.api import users
-
-from base import errors
-from datastore import data_handler
-from issue_management import issue_tracker_utils
+from clusterfuzz._internal.base import errors
+from clusterfuzz._internal.datastore import data_handler
+from clusterfuzz._internal.issue_management import issue_tracker_utils
+from libs import auth
 
 VIEW_OPERATION = 'View'
 MODIFY_OPERATION = 'Modify'
-TTL_IN_SECONDS = 15 * 60
 
 
 class _DoNotCatchException(Exception):
   """Serve as a dummy exception to avoid catching any exception."""
-  pass
 
 
-class EarlyExitException(Exception):
+class EarlyExitError(Exception):
   """Serve as an exception for exiting a handler's method early."""
 
   def __init__(self, message, status, trace_dump=None):
-    super(EarlyExitException, self).__init__(message)
+    super().__init__(message)
     self.status = status
     self.trace_dump = trace_dump
     if self.trace_dump is None:
@@ -51,29 +49,29 @@ class EarlyExitException(Exception):
     """Build dict that is used for JSON serialisation."""
     return {
         'traceDump': self.trace_dump,
-        'message': self.message,
+        'message': str(self),
         'email': get_user_email(),
         'status': self.status,
         'type': self.__class__.__name__
     }
 
 
-class AccessDeniedException(EarlyExitException):
+class AccessDeniedError(EarlyExitError):
   """Serve as an exception for exiting a handler's method with 403."""
 
   def __init__(self, message=''):
-    super(AccessDeniedException, self).__init__(message, 403, '')
+    super().__init__(message, 403, '')
 
 
-class UnauthorizedException(EarlyExitException):
+class UnauthorizedError(EarlyExitError):
   """Serve as an exception for exiting a handler's method with 401."""
 
   def __init__(self, message=''):
-    super(UnauthorizedException, self).__init__(message, 401, '')
+    super().__init__(message, 401, '')
 
 
 def get_testcase(testcase_id):
-  """Get a valid testcase or raise EarlyExitException."""
+  """Get a valid testcase or raise EarlyExitError."""
   testcase = None
   try:
     testcase = data_handler.get_testcase_by_id(testcase_id)
@@ -81,26 +79,25 @@ def get_testcase(testcase_id):
     pass
 
   if not testcase:
-    raise EarlyExitException("Testcase (id=%s) doesn't exist" % testcase_id,
-                             404)
+    raise EarlyExitError("Testcase (id=%s) doesn't exist" % testcase_id, 404)
   return testcase
 
 
-def get_issue_tracker_manager(testcase):
-  """Get an IssueTrackerManager or raise EarlyExitException."""
-  itm = issue_tracker_utils.get_issue_tracker_manager(testcase)
-  if not itm:
-    raise EarlyExitException(
+def get_issue_tracker_for_testcase(testcase):
+  """Get an IssueTracker or raise EarlyExitError."""
+  issue_tracker = issue_tracker_utils.get_issue_tracker_for_testcase(testcase)
+  if not issue_tracker:
+    raise EarlyExitError(
         "The testcase doesn't have a corresponding issue tracker", 404)
-  return itm
+  return issue_tracker
 
 
 def cast(value, fn, error_message):
-  """Return `fn(value)` or raise an EarlyExitException with 400."""
+  """Return `fn(value)` or raise an EarlyExitError with 400."""
   try:
     return fn(value)
   except (ValueError, TypeError):
-    raise EarlyExitException(error_message, 400)
+    raise EarlyExitError(error_message, 400)
 
 
 def should_render_json(accepts, content_type):
@@ -139,20 +136,19 @@ def get_or_exit(fn,
   except not_found_exception:
     pass
   except Exception:
-    raise EarlyExitException(
-        '%s (%s: %s)' % (error_message, sys.exc_info()[0],
-                         sys.exc_info()[1].message), 500)
+    raise EarlyExitError(
+        '%s (%s: %s)' % (error_message, sys.exc_info()[0], str(
+            sys.exc_info()[1])), 500)
 
   if non_empty_fn(result):
     return result
-  else:
-    raise EarlyExitException(not_found_message, 404)
+  raise EarlyExitError(not_found_message, 404)
 
 
 def get_user_email():
   """Returns currently logged-in user's email."""
   try:
-    return users.get_current_user().email()
+    return auth.get_current_user().email
   except Exception:
     return ''
 
@@ -163,10 +159,24 @@ def get_integer_key(request):
   try:
     return int(key)
   except (ValueError, KeyError):
-    raise EarlyExitException('Invalid key format.', 400)
+    raise EarlyExitError('Invalid key format.', 400)
 
 
 def log(message, operation_type):
   """Logs operation being carried by current logged-in user."""
   logging.info('ClusterFuzz: %s (%s): %s.', operation_type, get_user_email(),
                message)
+
+
+def diff(old_str: str, new_str: str) -> str:
+  """Generates the diff between the two provided strings."""
+  old_lines = old_str.splitlines(keepends=True)
+  new_lines = new_str.splitlines(keepends=True)
+
+  diff_generator = difflib.ndiff(old_lines, new_lines)
+  clean_diff = [
+      line for line in diff_generator
+      if line.startswith('- ') or line.startswith('+ ')
+  ]
+
+  return "".join(clean_diff)

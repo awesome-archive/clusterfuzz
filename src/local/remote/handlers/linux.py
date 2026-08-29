@@ -25,7 +25,7 @@ class Handler(posix.Handler):
     assert project, 'Need to specify a project via --project argument.'
     assert zone, 'Need to specify a zone via --zone argument.'
 
-    super(Handler, self).__init__(
+    super().__init__(
         instance_name=instance_name,
         platform='linux',
         project=project,
@@ -51,7 +51,7 @@ class Handler(posix.Handler):
 
   def _run(self, command):
     """Custom _run that ensures that command is run inside docker container."""
-    print 'Running: ' + command
+    print('Running: ' + command)
     return api.sudo('docker exec {user} bash -c "{command}"'.format(
         user=self.username, command=command.replace('"', '\\"')))
 

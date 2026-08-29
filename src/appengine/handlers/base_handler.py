@@ -1,4 +1,4 @@
-# Copyright 2019 Google LLC
+# Copyright 2020 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,18 +22,30 @@ import os
 import re
 import sys
 import traceback
+import urllib.parse
 
-from google.appengine.api import users
+from flask import redirect as flask_redirect
+from flask import request
+from flask import Response
+from flask.views import MethodView
+from google.cloud import ndb
 import jinja2
-import webapp2
+import jira
 
-from base import utils
-from config import db_config
-from config import local_config
-from datastore import ndb
-from google_cloud_utils import storage
+from clusterfuzz._internal.base import utils
+from clusterfuzz._internal.config import db_config
+from clusterfuzz._internal.config import local_config
+from clusterfuzz._internal.google_cloud_utils import storage
+from clusterfuzz._internal.system import environment
+from libs import auth
+from libs import form
 from libs import helpers
-from system import environment
+
+# Pattern from
+# https://github.com/google/closure-library/blob/
+# 3037e09cc471bfe99cb8f0ee22d9366583a20c28/closure/goog/html/safeurl.js
+_SAFE_URL_PATTERN = re.compile(
+    r'^(?:(?:https?|mailto|ftp):|[^:/?#]*(?:[/?#]|$))', flags=re.IGNORECASE)
 
 
 def add_jinja2_filter(name, fn):
@@ -44,19 +56,24 @@ class JsonEncoder(json.JSONEncoder):
   """Json encoder."""
   _EPOCH = datetime.datetime.utcfromtimestamp(0)
 
-  def default(self, obj):  # pylint: disable=arguments-differ,method-hidden
-    if isinstance(obj, ndb.Model):
-      dict_obj = obj.to_dict()
-      dict_obj['id'] = obj.key.id()
+  def default(self, o):  # pylint: disable=arguments-differ,method-hidden
+    if isinstance(o, ndb.Model):
+      dict_obj = o.to_dict()
+      dict_obj['id'] = o.key.id()
       return dict_obj
-    elif isinstance(obj, datetime.datetime):
-      return int((obj - self._EPOCH).total_seconds())
-    elif hasattr(obj, 'to_dict'):
-      return obj.to_dict()
-    elif isinstance(obj, cgi.FieldStorage):
-      return str(obj)
-    else:
-      raise Exception('Cannot serialise %s' % obj)
+    if isinstance(o, datetime.datetime):
+      return int((o - self._EPOCH).total_seconds())
+    if hasattr(o, 'to_dict'):
+      return o.to_dict()
+    if isinstance(o, cgi.FieldStorage):
+      return str(o)
+    if isinstance(o, bytes):
+      return o.decode('utf-8')
+    if isinstance(o, jira.resources.Resource):
+      if o.raw:
+        return o.raw
+
+    return json.JSONEncoder.default(self, o)
 
 
 def format_time(dt):
@@ -75,13 +92,14 @@ def split_br(text):
 
 def encode_json(value):
   """Dump base64-encoded JSON string (to avoid XSS)."""
-  return base64.b64encode(json.dumps(value, cls=JsonEncoder))
+  return base64.b64encode(json.dumps(
+      value, cls=JsonEncoder).encode('utf-8')).decode('utf-8')
 
 
 _JINJA_ENVIRONMENT = jinja2.Environment(
     loader=jinja2.FileSystemLoader(
         os.path.join(os.path.dirname(__file__), '..', 'templates')),
-    extensions=['jinja2.ext.autoescape'],
+    extensions=[],
     autoescape=True)
 _MENU_ITEMS = []
 
@@ -97,18 +115,26 @@ def add_menu(name, href):
   _MENU_ITEMS.append(_MenuItem(name, href))
 
 
-def make_switch_account_url(dest_url):
+def make_login_url(dest_url):
   """Make the switch account url."""
-  login_url = users.create_login_url(dest_url=dest_url)
-
-  # If a user is already logged into multiple accounts, the login URL alone will
-  # not work properly. Though this approach is fairly brittle, it is a common
-  # user complaint and seems worth attempting to account for.
-  # Context at https://crbug.com/740086 and https://crbug.com/monorail/3352
-  return login_url.replace('/ServiceLogin', '/AccountChooser', 1)
+  return '/login?' + urllib.parse.urlencode({'dest': dest_url})
 
 
-class _MenuItem(object):
+def make_logout_url(dest_url):
+  """Make the switch account url."""
+  return '/logout?' + urllib.parse.urlencode({
+      'csrf_token': form.generate_csrf_token(),
+      'dest': dest_url,
+  })
+
+
+def check_redirect_url(url):
+  """Check redirect URL is safe."""
+  if not _SAFE_URL_PATTERN.match(url):
+    raise helpers.EarlyExitError('Invalid redirect.', 403)
+
+
+class _MenuItem:
   """A menu item used for rendering an item in the main navigation."""
 
   def __init__(self, name, href):
@@ -116,25 +142,42 @@ class _MenuItem(object):
     self.href = href
 
 
-class Handler(webapp2.RequestHandler):
+class Handler(MethodView):
   """A superclass for all handlers. It contains many convenient methods."""
 
   def is_cron(self):
     """Return true if the request is from a cron job."""
-    return bool(self.request.headers.get('X-Appengine-Cron'))
+    return bool(request.headers.get('X-Appengine-Cron'))
+
+  def should_render_json(self):
+    return (self.is_json or
+            'application/json' in request.headers.get('accept', ''))
 
   def render_forbidden(self, message):
     """Write HTML response for 403."""
+    login_url = make_login_url(dest_url=request.url)
+    user_email = helpers.get_user_email()
+    if not user_email:
+      return self.redirect(login_url)
+
     contact_string = db_config.get_value('contact_string')
     template_values = {
         'message': message,
         'user_email': helpers.get_user_email(),
-        'login_url': users.create_login_url(dest_url=self.request.url),
-        'switch_account_url': make_switch_account_url(self.request.url),
-        'logout_url': users.create_logout_url(dest_url=self.request.url),
+        'login_url': login_url,
+        'switch_account_url': login_url,
+        'logout_url': make_logout_url(dest_url=request.url),
         'contact_string': contact_string,
     }
-    self.render('error-403.html', template_values, 403)
+    return self.render('error-403.html', template_values, 403)
+
+  def _add_security_response_headers(self, response):
+    """Add security-related headers to response."""
+    response.headers['Strict-Transport-Security'] = (
+        'max-age=2592000; includeSubdomains')
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'deny'
+    return response
 
   def render(self, path, values=None, status=200):
     """Write HTML response."""
@@ -143,6 +186,7 @@ class Handler(webapp2.RequestHandler):
 
     values['menu_items'] = _MENU_ITEMS
     values['is_oss_fuzz'] = utils.is_oss_fuzz()
+    values['is_chromium'] = utils.is_chromium()
     values['is_development'] = (
         environment.is_running_on_app_engine_development())
     values['is_logged_in'] = bool(helpers.get_user_email())
@@ -150,102 +194,112 @@ class Handler(webapp2.RequestHandler):
     # Only track analytics for non-admin users.
     values['ga_tracking_id'] = (
         local_config.GAEConfig().get('ga_tracking_id')
-        if not users.is_current_user_admin() else None)
+        if not auth.is_current_user_admin() else None)
 
     if values['is_logged_in']:
-      values['switch_account_url'] = make_switch_account_url(self.request.url)
-      values['logout_url'] = users.create_logout_url(dest_url=self.request.url)
+      values['switch_account_url'] = make_login_url(request.url)
+      values['logout_url'] = make_logout_url(dest_url=request.url)
 
     template = _JINJA_ENVIRONMENT.get_template(path)
 
-    self.response.headers['Content-Type'] = 'text/html'
-    self.response.out.write(template.render(values))
-    self.response.set_status(status)
+    response = Response()
+    response = self._add_security_response_headers(response)
+    response.headers['Content-Type'] = 'text/html'
+    response.data = template.render(values)
+    response.status_code = status
+    return response
 
+  # pylint: disable=unused-argument
   def before_render_json(self, values, status):
     """A hook for modifying values before render_json."""
 
   def render_json(self, values, status=200):
     """Write JSON response."""
-    self.response.headers['Content-Type'] = 'application/json'
+    response = Response()
+    response = self._add_security_response_headers(response)
+    response.headers['Content-Type'] = 'application/json'
     self.before_render_json(values, status)
-    self.response.out.write(json.dumps(values, cls=JsonEncoder))
-    self.response.set_status(status)
+    response.data = json.dumps(values, cls=JsonEncoder)
+    response.status_code = status
+    return response
 
-  def handle_exception(self, exception, _):
+  def handle_exception(self, exception):
     """Catch exception and format it properly."""
     try:
-
       status = 500
       values = {
-          'message': exception.message,
+          'message': str(exception),
           'email': helpers.get_user_email(),
           'traceDump': traceback.format_exc(),
           'status': status,
           'type': exception.__class__.__name__
       }
-      if isinstance(exception, helpers.EarlyExitException):
+      if isinstance(exception, helpers.EarlyExitError):
         status = exception.status
         values = exception.to_dict()
-      values['params'] = self.request.params.dict_of_lists()
 
       # 4XX is not our fault. Therefore, we hide the trace dump and log on
       # the INFO level.
-      if status >= 400 and status <= 499:
+      if 400 <= status <= 499:
         logging.info(json.dumps(values, cls=JsonEncoder))
         del values['traceDump']
       else:  # Other error codes should be logged with the EXCEPTION level.
         logging.exception(exception)
 
-      if helpers.should_render_json(
-          self.request.headers.get('accept', ''),
-          self.response.headers.get('Content-Type')):
-        self.render_json(values, status)
-      else:
-        if status == 403 or status == 401:
-          self.render_forbidden(exception.message)
-        else:
-          self.render('error.html', values, status)
+      if self.should_render_json():
+        return self.render_json(values, status)
+      if status in (403, 401):
+        return self.render_forbidden(str(exception))
+      return self.render('error.html', values, status)
     except Exception:
       self.handle_exception_exception()
+
+    return None
 
   def handle_exception_exception(self):
     """Catch exception in handle_exception and format it properly."""
     exception = sys.exc_info()[1]
-    values = {'message': exception.message, 'traceDump': traceback.format_exc()}
+    values = {'message': str(exception), 'traceDump': traceback.format_exc()}
     logging.exception(exception)
-    if helpers.should_render_json(
-        self.request.headers.get('accept', ''),
-        self.response.headers.get('Content-Type')):
-      self.render_json(values, 500)
-    else:
-      self.render('error.html', values, 500)
+    if self.should_render_json():
+      return self.render_json(values, 500)
+    return self.render('error.html', values, 500)
 
   def redirect(self, url, **kwargs):
-    """Explicitly converts url to 'str', because webapp2.RequestHandler.redirect
-    strongly requires 'str' but url might be an unicode string."""
-    super(Handler, self).redirect(str(url), **kwargs)
+    """Check vaid url and redirect to it, if valid."""
+    url = str(url)
+    check_redirect_url(url)
+    return flask_redirect(url, **kwargs)
+
+  def dispatch_request(self, *args, **kwargs):
+    """Dispatch a request and postprocess."""
+    self.is_json = False
+    try:
+      return super().dispatch_request(*args, **kwargs)
+    except Exception as exception:
+      return self.handle_exception(exception)
 
 
 class GcsUploadHandler(Handler):
   """A handler which uploads files to GCS."""
 
-  def __init__(self, request, response):
-    self.initialize(request, response)
+  def dispatch_request(self, *args, **kwargs):
+    """Dispatch a request and postprocess."""
     self.upload = None
+    return super().dispatch_request(*args, **kwargs)
 
   def get_upload(self):
     """Get uploads."""
     if self.upload:
       return self.upload
 
-    upload_key = self.request.get('upload_key')
+    upload_key = request.get('upload_key')
     if not upload_key:
       return None
 
     blob_info = storage.GcsBlobInfo.from_key(upload_key)
     if not blob_info:
-      raise helpers.EarlyExitException('Failed to upload.', 500)
+      raise helpers.EarlyExitError('Failed to upload.', 500)
 
     self.upload = blob_info
     return self.upload

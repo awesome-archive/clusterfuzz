@@ -19,7 +19,7 @@
 import re
 import sys
 
-from datastore import search_tokenizer
+from clusterfuzz._internal.datastore import search_tokenizer
 from libs import helpers
 
 KEYWORD_FIELD_REGEX = (
@@ -49,26 +49,24 @@ def extract_keyword_field(keyword, field):
     elif value.startswith("'") and value.endswith("'"):
       value = value.strip("'")
     return re.sub(regex, ' ', keyword), value
-  else:
-    return keyword, None
+  return keyword, None
 
 
 def get_boolean(value):
   """Convert yes/no to boolean or raise Exception."""
   if value == 'yes':
     return True
-  elif value == 'no':
+  if value == 'no':
     return False
-  else:
-    raise ValueError("The value must be 'yes' or 'no'.")
+  raise ValueError("The value must be 'yes' or 'no'.")
 
 
 def get_string(value):
   """Get sanitized string."""
-  return value.strip().lower()
+  return value.strip()
 
 
-class Filter(object):
+class Filter:
   """Base filter."""
 
   def add(self, query, params):
@@ -98,15 +96,14 @@ class SimpleFilter(Filter):
     value = params.get(self.param_key)
     if is_empty(value):
       if self.required:
-        raise helpers.EarlyExitException("'%s' is required." % self.param_key,
-                                         400)
+        raise helpers.EarlyExitError("'%s' is required." % self.param_key, 400)
       return
 
     try:
       for transformer in self.transformers:
         value = transformer(value)
     except ValueError:
-      raise helpers.EarlyExitException(
+      raise helpers.EarlyExitError(
           "Invalid '%s': %s" % (self.param_key, sys.exc_info()[1]), 400)
 
     query.filter(self.field, value, **self.extras)
@@ -148,10 +145,10 @@ class Keyword(SimpleFilter):
 
   def __init__(self, keyword_filters, field, param_key):
     self.keyword_filters = keyword_filters
-    super(Keyword, self).__init__(field, param_key, required=False)
+    super().__init__(field, param_key, required=False)
 
   def add(self, query, params):
-    """Add fitler."""
+    """Add filter."""
     value = params.get(self.param_key, '')
     for fltr in self.keyword_filters:
       value, raw_value = extract_keyword_field(value, fltr.param_key)

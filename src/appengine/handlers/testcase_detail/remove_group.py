@@ -13,7 +13,9 @@
 # limitations under the License.
 """Handler for removing a testcase from a group."""
 
-from datastore import data_handler
+from flask import request
+
+from clusterfuzz._internal.datastore import data_handler
 from handlers import base_handler
 from handlers.testcase_detail import show
 from libs import handler
@@ -42,7 +44,7 @@ class Handler(base_handler.Handler):
   @handler.check_admin_access
   def post(self):
     """Remove the issue from the testcase."""
-    testcase_id = self.request.get('testcaseId')
+    testcase_id = request.get('testcaseId')
 
     updated_testcase = remove_group(testcase_id)
-    self.render_json(show.get_testcase_detail(updated_testcase))
+    return self.render_json(show.get_testcase_detail(updated_testcase))

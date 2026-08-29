@@ -1,6 +1,6 @@
 ---
 layout: default
-title: libFuzzer and AFL
+title: libFuzzer and AFL++
 parent: Setting up fuzzing
 nav_order: 1
 permalink: /setting-up-fuzzing/libfuzzer-and-afl/
@@ -20,16 +20,23 @@ features such as dictionaries and seed corpus.
 
 ### Compiler
 LibFuzzer and AFL need to use instrumentation from the Clang compiler. In our
-documentation, we use features provided by Clang **6.0** or greater. To get a
-Clang that can be used to follow the examples, download one from the [Clang
-releases page] or install one using your package manager. We will refer to these
-compilers as `$CC` and `$CXX`. Set these in the environment so that you can copy
-and paste the example commands:
+documentation, we use features provided by Clang **6.0** or greater. However,
+for serious use of ClusterFuzz, we recommend using as close to trunk Clang as
+possible. To get a Clang build that is close to trunk you can download it from
+the [snapshots page] (Windows) or follow the instructions on the [apt page]
+(Ubuntu/Debian). Otherwise you can download a Clang release from the [releases
+page] or install one using your package manager. We will refer to these
+compilers in examples as `$CC` and `$CXX`. Set these in the environment so that
+you can copy and paste the example commands:
 
 ```bash
 export CC=/path/to/clang
 export CXX=/path/to/clang++
 ```
+
+[releases page]: http://releases.llvm.org/download.html
+[apt page]: https://apt.llvm.org/
+[snapshots page]: https://llvm.org/builds/
 
 ### Platform
 libFuzzer is supported on Linux, macOS, and Windows. For Windows, you will need
@@ -62,11 +69,16 @@ their dependencies.
 
 ### AFL
 ClusterFuzz supports fuzzing libFuzzer harness functions
-(`LLVMFuzzerTestOneInput`) with AFL. AFL must be used with [AddressSanitizer].
+(`LLVMFuzzerTestOneInput`) with AFL++. AFL++ must be used with [AddressSanitizer].
 To build a fuzz target for AFL, run our [script] which downloads and builds AFL
 and `FuzzingEngine.a`, a library you can link the target against to make it AFL
 compatible. Then compile and link your target using
 `-fsanitize-coverage=trace-pc-guard` and `-fsanitize=address`.
+
+Note: This will not use AFL++ to it's full potential as advanced fuzzing
+features like CMPLOG and COMPCOV will not be enabled.
+It is therefore recommended to use oss-fuzz to create (multiple) fuzzing
+packages instead, as each package is instrumented with random options.
 
 
 ```bash
@@ -85,7 +97,7 @@ dependencies, and AFL's dependencies: `afl-fuzz` and `afl-showmap` (both built
 by the [script]).
 
 ## Creating a job type
-LibFuzzer jobs **must** contain the string **"libfuzzer"** in their name, AFL
+LibFuzzer jobs **must** contain the string **"libfuzzer"** in their name, AFL++
 jobs **must** contain the string **"afl"** in their name. Jobs must also contain
 the name of the sanitizer they are using (e.g. "asan", "msan",  or "ubsan").
 **"libfuzzer_asan_my_project"** and **"afl_asan_my_project"** are examples of
@@ -95,23 +107,20 @@ To create a job for libFuzzer or AFL:
 1. Navigate to the *Jobs* page.
 2. Go to the "ADD NEW JOB" form.
 3. Fill out the "Name" and "Platform" (LINUX).
-  1. If setting up an **AFL** job, use the templates **"afl"** and
-     **"engine_asan"**.
-  2. If setting up a **libFuzzer** job, use the templates **"libfuzzer"** and
-     **"engine_$SANITIZER"** depending on which sanitizer you are using (e.g.
-     **"engine_asan"**).
-4. Select your build (your zip containing the fuzz target binary) to upload as a
+4. Enable the desired fuzzer in the "Select/modify fuzzers" field, e.g.
+   **libFuzzer**, **honggfuzz**, or **afl**.
+5. If setting up an **AFL** job, use the templates **"afl"** and
+   **"engine_asan"**.
+6. If setting up a **honggfuzz** job, use the templates **"honggfuzz"** and 
+   **"engine_asan"**.
+7. If setting up a **libFuzzer** job, use the templates **"libfuzzer"** and
+   **"engine_$SANITIZER"** depending on which sanitizer you are using (e.g.
+   **"engine_asan"**).
+8. Select your build (your zip containing the fuzz target binary) to upload as a
    "Custom Build". If you are running ClusterFuzz in production, it is
    recommended to set up a [build pipeline] and follow [these] instructions on
    providing continuous builds rather than using a "Custom Build".
-5. Use the "ADD" button to add the job to ClusterFuzz.
-
-Next we must let ClusterFuzz know which fuzzer the job can be used with:
-1. Navigate to the *Fuzzers* page.
-2. Click "EDIT" for the desired fuzzer (afl or libFuzzer).
-3. Click "Select/modify jobs".
-4. Mark the desired job.
-5. Click "SUBMIT".
+9. Use the "ADD" button to add the job to ClusterFuzz.
 
 [these]: {{ site.baseurl }}/production-setup/setting-up-fuzzing-job/
 
@@ -155,9 +164,8 @@ Though ClusterFuzz supports fuzzing with AFL, it doesn't support using it for
 [corpus pruning] and [crash minimization]. Therefore, if you use AFL, you should
 also use libFuzzer which supports these tasks.
 
-[AFL]: http://lcamtuf.coredump.cx/afl/
+[AFL++]: https://github.com/AFLplusplus/AFLplusplus
 [AddressSanitizer]: https://clang.llvm.org/docs/AddressSanitizer.html
-[Clang releases page]: http://releases.llvm.org/download.html
 [afl_driver.cpp]: https://raw.githubusercontent.com/llvm-mirror/compiler-rt/master/lib/fuzzer/afl/afl_driver.cpp
 [bot logs]: {{ site.baseurl }}/getting-started/local-instance/#viewing-logs
 [build pipeline]: {{ site.baseurl }}/production-setup/build-pipeline/

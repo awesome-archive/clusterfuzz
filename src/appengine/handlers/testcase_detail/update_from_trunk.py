@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Handler for updating from trunk. In other words, updating the stacktrace."""
-from base import tasks
+from clusterfuzz._internal.base import tasks
 from handlers import base_handler
 from handlers.testcase_detail import show
 from libs import handler
@@ -25,7 +25,7 @@ def update(testcase):
   testcase.put()
 
   tasks.add_task(
-      'stack',
+      'variant',
       testcase.key.id(),
       testcase.job_type,
       queue=tasks.queue_for_testcase(testcase))
@@ -44,4 +44,4 @@ class Handler(base_handler.Handler):
   def post(self, testcase):
     """Update from trunk."""
     update(testcase)
-    self.render_json(show.get_testcase_detail(testcase))
+    return self.render_json(show.get_testcase_detail(testcase))

@@ -15,16 +15,18 @@
 
 import json
 
-from datastore import data_handler
-from datastore import data_types
-from datastore import ndb_utils
+from flask import request
+
+from clusterfuzz._internal.datastore import data_handler
+from clusterfuzz._internal.datastore import data_types
+from clusterfuzz._internal.datastore import ndb_utils
+from clusterfuzz._internal.metrics import crash_stats as crash_stats_common
 from handlers import base_handler
 from libs import crash_access
 from libs import crash_stats
 from libs import filters
 from libs import handler
 from libs import helpers
-from metrics import crash_stats as crash_stats_common
 
 PAGE_SIZE = 10
 DEFAULT_DAYS_FOR_BY_HOURS = 3
@@ -130,10 +132,9 @@ def query_testcase(project_name, crash_type, crash_state, security_flag,
       data_types.Testcase.open == is_open,
       ndb_utils.is_false(data_types.Testcase.is_a_duplicate_flag)).order(
           -data_types.Testcase.timestamp).iter(
-              limit=1,
-              projection=[
-                  data_types.Testcase.bug_information,
-                  data_types.Testcase.group_bug_information
+              limit=1, projection=[
+                  'bug_information',
+                  'group_bug_information',
               ])
 
 
@@ -170,11 +171,10 @@ def attach_testcases(rows):
     row['testcase'] = testcase
 
 
-def get_result(this):
+def get_result():
   """Get the result for the crash stats page."""
-  params = {k: v for k, v in this.request.iterparams()}
-  page = helpers.cast(
-      this.request.get('page') or 1, int, "'page' is not an int.")
+  params = dict(request.iterparams())
+  page = helpers.cast(request.get('page') or 1, int, "'page' is not an int.")
   group_by = params.get('group', 'platform')
   params['group'] = group_by
   sort_by = params.get('sort', 'total_count')
@@ -193,17 +193,21 @@ def get_result(this):
   group_query = crash_stats.Query()
   filters.add(group_query, params, GROUP_FILTERS)
 
-  total_count, rows = crash_stats.get(
-      query=query,
-      group_query=group_query,
-      offset=(page - 1) * PAGE_SIZE,
-      limit=PAGE_SIZE)
+  try:
+    total_count, rows = crash_stats.get(
+        query=query,
+        group_query=group_query,
+        offset=(page - 1) * PAGE_SIZE,
+        limit=PAGE_SIZE)
+  except ValueError:
+    raise helpers.EarlyExitError('Invalid filters', 400)
+
   attach_testcases(rows)
 
   helpers.log('CrashStats', helpers.VIEW_OPERATION)
 
   result = {
-      'totalPages': int(total_count / PAGE_SIZE) + 1,
+      'totalPages': (total_count // PAGE_SIZE) + 1,
       'page': page,
       'pageSize': PAGE_SIZE,
       'items': rows,
@@ -228,9 +232,10 @@ class Handler(base_handler.Handler):
 
   @handler.get(handler.HTML)
   @handler.unsupported_on_local_server
+  @handler.oauth
   def get(self):
     """Get and render the crash stats in HTML."""
-    result, params = get_result(self)
+    result, params = get_result()
     field_values = {
         'fuzzers':
             data_handler.get_all_fuzzer_names_including_children(
@@ -246,7 +251,7 @@ class Handler(base_handler.Handler):
         'maxHour':
             crash_stats_common.get_max_hour()
     }
-    self.render('crash-stats.html', {
+    return self.render('crash-stats.html', {
         'result': result,
         'fieldValues': field_values,
         'params': params
@@ -259,5 +264,5 @@ class JsonHandler(base_handler.Handler):
   @handler.post(handler.JSON, handler.JSON)
   def post(self):
     """Get and render the crash stats in JSON."""
-    result, _ = get_result(self)
-    self.render_json(result)
+    result, _ = get_result()
+    return self.render_json(result)

@@ -1,5 +1,5 @@
 <!--
-  Copyright 2018 Google LLC
+  Copyright 2019 Google LLC
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -20,6 +20,7 @@
 <link rel="import" href="../../bower_components/paper-styles/color.html">
 <link rel="import" href="../common/paginated-list/paginated-list.html">
 <link rel="import" href="upload-form.html">
+<link rel="import" href="upload-form-simplified.html">
 
 <dom-module id="upload-testcase">
   <link rel="import" href="../../stylesheets/main.css" type="css">
@@ -187,14 +188,19 @@
         color: #FC2929;
       }
 
-      :host .testcases > div.row .fuzzer {
+      :host .testcases > div.row .project {
         border: 1px solid #5D4037;
         color: #5D4037;
       }
 
+      :host .testcases > div.row .fuzzer {
+        border: 1px solid #CB008E;
+        color: #CB008E;
+      }
+
       :host .testcases > div.row .job {
-        border: 1px solid #5D4037;
-        color: #5D4037;
+        border: 1px solid #CB008E;
+        color: #CB008E;
       }
 
       :host .testcases > div.row .issue {
@@ -223,12 +229,6 @@
         width: 50%;
       }
 
-      #mainContent {
-        min-width: 1000px;
-        max-width: 1000px;
-        width: 1000px;
-      }
-
       :host .submit-button {
         position: absolute;
         top: 13px;
@@ -251,6 +251,8 @@
       debounce-duration="500"></iron-ajax>
     <upload-form id="uploadForm" field-values="{{fieldValues}}" opened="{{uploadFormOpened}}">
     </upload-form>
+    <upload-form-simplified id="uploadFormSimplified" field-values="{{fieldValues}}" opened="{{uploadFormSimplifiedOpened}}">
+    </upload-form-simplified>
     <app-toolbar>
       <paper-icon-button icon="menu" onclick="document.getElementById('drawer').toggle()"></paper-icon-button>
       <div id="title">Uploaded Testcases</div>
@@ -262,7 +264,12 @@
     <div id="mainContent">
       <div class="toolbar">
         <div class="permission">[[getPermissionText(params)]]</div>
-        <div class="buttons"><paper-button raised toggles active="{{uploadFormOpened}}">Upload</paper-button></div>
+        <div class="buttons">
+          <paper-button raised toggles active="{{uploadFormOpened}}">Upload</paper-button>
+          <template is="dom-if" if="[[fieldValues.isChromium]]">
+            <paper-button raised toggles active="{{uploadFormSimplifiedOpened}}">Quick Upload</paper-button>
+          </template>
+        </div>
       </div>
       <paginated-list
           id="paginatedList"
@@ -291,8 +298,13 @@
                     </a>
                   </td>
                   <td class="right">
+                    <span
+                        class="label project"
+                        title="The crash is associated with the [[item.testcase.projectName]] project.">
+                      Project [[item.testcase.projectName]]
+                    </span>
                     <template is="dom-if" if="[[item.testcase.issueNumber]]">
-                      <a class="label issue" href="/issue/[[item.testcaseId]]/[[item.testcase.issueNumber]]" title="Click to view the associated issue [[item.testcase.issueNumber]] in the issue tracker.">Issue [[item.testcase.issueNumber]]</a>
+                      <a class="label issue" href="/issue/[[item.testcaseId]]" title="Click to view the associated issue [[item.testcase.issueNumber]] in the issue tracker.">Issue [[item.testcase.issueNumber]]</a>
                     </template>
                     <template is="dom-repeat" items="[[getStatus(item)]]" as="status">
                       <span class$="label [[status.className]]" title$="[[status.tooltip]]">[[status.label]]</span>
@@ -347,6 +359,12 @@
             value: false
           },
           uploadFormOpened: {
+            type: Boolean,
+            value: () => {
+              return !!window.query.getParam('upload');
+            }
+          },
+          uploadFormSimplifiedOpened: {
             type: Boolean,
             value: () => {
               return !!window.query.getParam('upload');

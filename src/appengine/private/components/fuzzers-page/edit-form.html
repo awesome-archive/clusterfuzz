@@ -1,5 +1,5 @@
 <!--
-  Copyright 2018 Google LLC
+  Copyright 2019 Google LLC
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 <link rel="import" href="../../components/common/if-else/if-else.html">
 
 <dom-module id="edit-form">
+  <link rel="import" href="../../stylesheets/main.css" type="css">
   <link rel="import" href="../technology/technology.css" type="css">
   <template>
     <style>
@@ -96,7 +97,8 @@
         submit-button="Submit"
         response="{{response}}"
         on-response="handleGcsResponseAndError"
-        opened="{{opened}}">
+        opened="{{opened}}"
+        loading="{{loading}}">
       <template is="dom-if" if="[[error]]">
         <div class="error">
           ERROR: [[error.response.message]]
@@ -111,8 +113,15 @@
         </paper-input>
       </div>
       <div class="inline narrow">
+        <paper-input
+            label="Primary owner (email)"
+            value="{{fuzzer.primary_owner}}"
+            title="Primary owner for VRP rewards.">
+        </paper-input>
+      </div>
+      <div class="inline narrow">
         <paper-menu-button
-            class="job-select"
+            class="job-select dropdown-filter"
             no-animations="true"
             ignore-select="true"
             noink>
@@ -127,11 +136,21 @@
           <paper-listbox
               slot="dropdown-content"
               multi slot="dropdown-content"
-              attr-for-selected="value"
+              attr-for-selected="val"
               selected-values="{{fuzzer.jobs}}"
               selected-attribute="checked">
-            <template is="dom-repeat" items="[[fieldValues.jobs]]">
-              <paper-checkbox class="job-checkbox" value="[[item]]">
+            <paper-input
+                autofocus
+                label="Search jobs"
+                value="{{jobKey}}"
+                on-tap="stopEventPropagation"
+                on-keydown="stopEventPropagation"
+                on-keyup="stopEventPropagation" no-label-float>
+              <iron-icon icon="icons:search" slot="prefix"></iron-icon>
+              <iron-icon icon="icons:clear" slot="suffix" on-click="clearSearchInput"></iron-icon>
+            </paper-input>
+            <template is="dom-repeat" items="[[fieldValues.jobs]]" filter="{{onmatch(jobKey)}}">
+              <paper-checkbox class="job-checkbox" val="[[item]]">
                 [[item]]
               </paper-checkbox>
             </template>
@@ -140,14 +159,27 @@
       </div>
       <div class="inline narrow">
         <paper-dropdown-menu
+            class="dropdown-filter"
             no-animations="true"
             label="Corpus"
             title="Corpus to run this fuzzer with"
             noink>
-          <paper-listbox slot="dropdown-content" attr-for-selected="value" selected="{{fuzzer.data_bundle_name}}">
-            <paper-item value="">None</paper-item>
-            <template is="dom-repeat" items="[[fieldValues.corpora]]">
-              <paper-item value="[[item]]">[[item]]</paper-item>
+          <paper-listbox
+              slot="dropdown-content"
+              attr-for-selected="val"
+              selected="{{fuzzer.data_bundle_name}}">
+            <paper-input
+                label="Search corpora"
+                value="{{corpusKey}}"
+                on-tap="stopEventPropagation"
+                on-keydown="stopEventPropagation"
+                on-keyup="stopEventPropagation" no-label-float>
+              <iron-icon icon="icons:search" slot="prefix"></iron-icon>
+              <iron-icon icon="icons:clear" slot="suffix" on-click="clearSearchInput"></iron-icon>
+            </paper-input>
+            <paper-item val="">None</paper-item>
+            <template is="dom-repeat" items="[[fieldValues.corpora]]" filter="{{onmatch(corpusKey)}}">
+              <paper-item val="[[item]]">[[item]]</paper-item>
             </template>
           </paper-listbox>
         </paper-dropdown-menu>
@@ -195,11 +227,16 @@
       </div>
       <div class="inline narrow">
         <paper-checkbox checked="{{fuzzer.external_contribution}}">External contribution</paper-checkbox>
-
-        <!-- TODO: Re-enable after the differential fuzzing is implemented.
-        <paper-checkbox checked="{{fuzzer.differential}}">Differential fuzzer</paper-checkbox>
-        -->
       </div>
+      <div class="inline narrow">
+        <paper-checkbox checked="{{fuzzer.trusted}}">Trusted</paper-checkbox>
+      </div>
+
+      <!-- TODO: Re-enable after the differential fuzzing is implemented.
+      <div class="inline narrow">
+        <paper-checkbox checked="{{fuzzer.differential}}">Differential fuzzer</paper-checkbox>
+      </div>
+      -->
     </ajax-dialog>
     <iron-ajax
       id="ajaxFinish"
@@ -208,7 +245,8 @@
       content-type="application/json"
       last-error="{{error}}"
       on-response="handleFinishResponse"
-      debounce-duration="1000">
+      debounce-duration="1000"
+      loading="{{loading}}">
     </iron-ajax>
   </template>
   <script>
@@ -226,11 +264,13 @@
                 'differential',
                 'executable_path',
                 'external_contribution',
+                'primary_owner',
                 'jobs',
                 'launcher_script',
                 'max_testcases',
                 'name',
                 'timeout',
+                'trusted',
             ],
           },
           file: Object,
@@ -241,6 +281,7 @@
           },
           fieldValues: Object,
           create: Boolean,
+          loading: Boolean,
         };
       }
 
@@ -308,6 +349,38 @@
 
       nameIsReadOnly(create) {
         return !create;
+      }
+
+
+      onmatch(key) {
+        if (!key)
+          return null;
+
+        try {
+          key = key.toLowerCase();
+        } catch (err) {}
+
+        return function(item) {
+          if (item.toLowerCase().search(key) >= 0)
+            return true;
+        };
+      }
+
+      stopEventPropagation(ev) {
+        ev.stopPropagation();
+      }
+
+      clearSearchInput(ev) {
+        // Clear the search box.
+        let searchBox = ev.target.parentNode;
+        searchBox.value = '';
+
+        // Clear the selection in the list box;
+        let listBox = searchBox.parentNode;
+        listBox.selected = '';
+
+        // Restore focus to searchbox.
+        searchBox.$.input.focus();
       }
     }
 

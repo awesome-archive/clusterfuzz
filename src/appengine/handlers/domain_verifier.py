@@ -13,7 +13,7 @@
 # limitations under the License.
 """Domain verifier."""
 
-from config import local_config
+from clusterfuzz._internal.config import local_config
 from handlers import base_handler
 from libs import helpers
 
@@ -21,11 +21,11 @@ from libs import helpers
 class Handler(base_handler.Handler):
   """Serve google.*.html domain verification file."""
 
-  def get(self, tag):
+  def get(self, tag=None):
     """Handle a get request."""
+    tag = 'google' + tag + '.html'
     verification_tag = local_config.GAEConfig().get('domain_verification_tag')
     if verification_tag != tag:
-      raise helpers.EarlyExitException('Not found.', 404)
+      raise helpers.EarlyExitError('Not found.', 404)
 
-    self.response.headers['content-type'] = 'text/html'
-    self.response.write('google-site-verification: ' + verification_tag)
+    return 'google-site-verification: ' + verification_tag

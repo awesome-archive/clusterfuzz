@@ -13,9 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+DEPLOYMENT_ZIP="linux-3-chrome-tests-syncer.zip"
+
+export DEPLOYMENT_ZIP
+
 source /data/setup_common.sh
 source /data/setup_depot_tools.sh
 source /data/setup_gerrit.sh
 source /data/setup_clusterfuzz.sh
 
-bash -ex /data/start_clusterfuzz.sh
+bash -ex /data/start_clusterfuzz.sh 2>&1

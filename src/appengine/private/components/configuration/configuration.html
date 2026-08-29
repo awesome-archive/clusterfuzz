@@ -1,5 +1,5 @@
 <!--
-  Copyright 2018 Google LLC
+  Copyright 2019 Google LLC
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -128,34 +128,23 @@
 
               <tr>
                 <td class="label">
-                  <div class="help" title="Stacktrace blacklist signatures (one regex per line). These signatures can be used to ignore a crash altogether.">
-                    Stacktrace blacklist signatures
+                  <div class="help" title="List of privileged google groups (one per line). These groups should contain the appengine service account for permission to check membership. Members of these groups can access security vulnerabilities.">
+                    Privileged groups
                   </div>
                 </td>
                 <td>
-                  <paper-textarea name="stack_blacklist" max-rows="5" value="[[config.stack_blacklist]]" no-label-float></paper-textarea>
+                  <paper-textarea name="privileged_groups" max-rows="5" value="[[config.privileged_groups]]" no-label-float></paper-textarea>
                 </td>
               </tr>
 
               <tr>
                 <td class="label">
-                  <div class="help" title="Stacktrace cleaning signatures (one regex per line). These signatures will be removed from display in crash stacktraces (but not the crash state).">
-                    Stacktrace cleaning signatures
+                  <div class="help" title="List of blacklisted users (one email per line). These users are blocked from accessing pages. Has precedence over other rules.">
+                    Blacklisted users
                   </div>
                 </td>
                 <td>
-                  <paper-textarea name="stack_clean_regex" max-rows="5" value="[[config.stack_clean_regex]]" no-label-float></paper-textarea>
-                </td>
-              </tr>
-
-              <tr>
-                <td class="label">
-                  <div class="help" title="Revision vars url (one per line - job;url). The url (with %s for revision) should point to source map containing list of component revisions used (as json).">
-                    Revision vars url
-                  </div>
-                </td>
-                <td>
-                  <paper-textarea name="revision_vars_url" max-rows="5" value="[[config.revision_vars_url]]" no-label-float></paper-textarea>
+                  <paper-textarea name="blacklisted_users" max-rows="5" value="[[config.blacklisted_users]]" no-label-float></paper-textarea>
                 </td>
               </tr>
 
@@ -183,6 +172,30 @@
 
               <tr>
                 <td class="label">
+                  <div class="help" title="Jira server URL">
+                    Jira server url
+                  </div>
+                </td>
+                <td>
+                  <paper-input name="jira_url" max-rows="5" value="[[config.jira_url]]" no-label-float>
+                  </paper-input>
+                </td>
+              </tr>
+
+              <tr>
+                <td class="label">
+                  <div class="help" title="Jira credentials to access Jira bug tracker.">
+                    Jira credentials
+                  </div>
+                </td>
+                <td>
+                  <paper-input name="jira_credentials" max-rows="5" value="[[config.jira_credentials]]" no-label-float>
+                  </paper-input>
+                </td>
+              </tr>
+
+              <tr>
+                <td class="label">
                   <div class="help" title="Component to googlesource repository mappings (one per line - component,repository)">
                     Component repository mappings (Chromium only)
                   </div>
@@ -205,6 +218,17 @@
 
               <tr>
                 <td class="label">
+                  <div class="help" title="Personal access token of the OSS-Fuzz Robot to file/close issues to the GitHub repositories of the projects under test (applicable to OSS-Fuzz only).">
+                    GitHub Personal Access Token of OSS-Fuzz Robot (OSS-Fuzz only)
+                  </div>
+                </td>
+                <td>
+                  <paper-input name="oss_fuzz_robot_github_personal_access_token" value="[[config.oss_fuzz_robot_github_personal_access_token]]" no-label-float></paper-input>
+                </td>
+              </tr>
+
+              <tr>
+                <td class="label">
                   <div class="help" title="Wifi SSID to use for Android bots.">
                     Wifi SSID (Android OS only)
                   </div>
@@ -222,17 +246,6 @@
                 </td>
                 <td>
                   <paper-input name="wifi_password" value="[[config.wifi_password]]" no-label-float></paper-input>
-                </td>
-              </tr>
-
-              <tr>
-                <td class="label">
-                  <div class="help" title="Service account email to connect to Android Build Apiary for fetching new OS images.">
-                    Android Build Access Email (Android OS only)
-                  </div>
-                </td>
-                <td>
-                  <paper-input name="build_apiary_service_account_email" value="[[config.build_apiary_service_account_email]]" no-label-float></paper-input>
                 </td>
               </tr>
 
@@ -271,12 +284,45 @@
 
               <tr>
                 <td class="label">
-                  <div class="help" title="Allows testcases to be viewed by any CCed email on bugs.">
-                    Relax testcase view restrictions
+                  <div class="help" title="API key to use to authenticate to SendGrid. SendGrid is used to send emails on task completions.">
+                    SendGrid API key (Optional)
+                  </div>
+                </td>
+                <td>
+                  <paper-input name="sendgrid_api_key" value="[[config.sendgrid_api_key]]" no-label-float></paper-input>
+                </td>
+              </tr>
+
+              <tr>
+                <td class="label">
+                  <div class="help" title="Sender email that SendGrid should use. SendGrid is used to send emails on task completions.">
+                    SendGrid sender email (Optional)
+                  </div>
+                </td>
+                <td>
+                  <paper-input name="sendgrid_sender" value="[[config.sendgrid_sender]]" no-label-float></paper-input>
+                </td>
+              </tr>
+
+              <tr>
+                <td class="label">
+                  <div class="help" title="Allows testcases to be viewed by any CCed email on bugs. By default, only domain users and issue owners can access the testcase, and CCed users on issues cannot.">
+                    Relax testcase view restrictions for issue ccs
                   </div>
                 </td>
                 <td>
                   <paper-checkbox name="relax_testcase_restrictions" checked="[[config.relax_testcase_restrictions]]"></paper-checkbox>
+                </td>
+              </tr>
+
+              <tr>
+                <td class="label">
+                  <div class="help" title="Allows domain users to view security bugs. By default, domain users can only access functional bugs, and security bugs are restricted to privileged and admin users.">
+                    Relax security bug restrictions for domain users
+                  </div>
+                </td>
+                <td>
+                  <paper-checkbox name="relax_security_bug_restrictions" checked="[[config.relax_security_bug_restrictions]]"></paper-checkbox>
                 </td>
               </tr>
 
@@ -307,7 +353,7 @@
                     <paper-input label="Fuzzer or job name" name="entity_name"></paper-input>
                   </td>
                   <td>
-                    <paper-dropdown-menu label="Type (fuzzer or job)" name="entity_kind" no-animations="true" noink>
+                    <paper-dropdown-menu label="Entity type" name="entity_kind" no-animations="true" noink>
                       <paper-listbox slot="dropdown-content" class="dropdown-content">
                         <template is="dom-repeat" items="[[fieldValues.user_permission_entity_kinds]]">
                           <paper-item label="[[item.name]]" value="[[item.value]]">[[item.name]]</paper-item>

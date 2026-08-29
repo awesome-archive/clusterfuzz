@@ -24,15 +24,14 @@
 import argparse
 import importlib
 import os
-
 import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 # guard needs to be at the top because it checks Python dependecies.
 from local.butler import guard
-guard.check()
 
-from local.butler import appengine
+guard.check()
 
 
 class _ArgumentParser(argparse.ArgumentParser):
@@ -45,7 +44,7 @@ class _ArgumentParser(argparse.ArgumentParser):
 
   def error(self, message):
     """Override to print full help for ever error."""
-    sys.stderr.write('error: %s\n' % message)
+    sys.stderr.write(f'error: {message}\n')
     self.print_help()
     sys.exit(2)
 
@@ -56,7 +55,7 @@ def _setup_args_for_remote(parser):
       '-i',
       '--instance-name',
       required=True,
-      help=('The instance name (e.g. clusterfuzz-linux-0005).'))
+      help='The instance name (e.g. clusterfuzz-linux-0005).')
   parser.add_argument('--project', help='The Project ID.')
   parser.add_argument('--zone', help='The Project Zone.')
 
@@ -99,18 +98,52 @@ def _setup_args_for_remote(parser):
   subparsers.add_parser('reboot', help='Reboot with `sudo reboot`.')
 
 
-def main():
-  """Parse the command-line args and invoke the right command."""
-  parser = _ArgumentParser(
-      description='Butler is here to help you with command-line tasks.')
-  subparsers = parser.add_subparsers(dest='command')
+def _add_run_subparser(toplevel_subparsers):
+  """Adds a parser for the `run` command."""
+  parser_run = toplevel_subparsers.add_parser(
+      'run', help='Run a one-off script against a datastore (e.g. migration).')
+  parser_run.add_argument(
+      'script_name',
+      help='The script module name under `./local/butler/scripts`.')
+  parser_run.add_argument(
+      '--script_args',
+      action='extend',
+      nargs=argparse.REMAINDER,
+      help='Script specific arguments')
+  parser_run.add_argument(
+      '--non-dry-run',
+      action='store_true',
+      help='Run with actual datastore writes. Default to dry-run.')
+  parser_run.add_argument(
+      '-c', '--config-dir', required=True, help='Path to application config.')
+  parser_run.add_argument(
+      '--local', action='store_true', help='Run against local server instance.')
 
-  subparsers.add_parser(
+
+def _add_package_subparser(toplevel_subparsers):
+  """Adds a parser for the `package` command."""
+  parser_package = toplevel_subparsers.add_parser(
+      'package', help='Package clusterfuzz with a staging revision')
+  parser_package.add_argument(
+      '-p', '--platform', choices=['linux', 'macos', 'windows', 'all'])
+  parser_package.add_argument(
+      '-r',
+      '--release',
+      choices=['prod', 'candidate', 'chrome-tests-syncer'],
+      default='prod')
+
+
+def _add_bootstrap_subparser(toplevel_subparsers):
+  """Adds a parser for the `bootstrap` command."""
+  toplevel_subparsers.add_parser(
       'bootstrap',
       help=('Install all required dependencies for running an appengine, a bot,'
             'and a mapreduce locally.'))
 
-  parser_py_unittest = subparsers.add_parser(
+
+def _add_py_unittest_subparser(toplevel_subparsers):
+  """Adds a parser for the `py_unittest` command."""
+  parser_py_unittest = toplevel_subparsers.add_parser(
       'py_unittest', help='Run Python unit tests.')
   parser_py_unittest.add_argument(
       '-p', '--pattern', help='Pattern for test files. Default is *_test.py.')
@@ -124,17 +157,226 @@ def main():
   parser_py_unittest.add_argument(
       '-v', '--verbose', action='store_true', help='Print logs from tests.')
   parser_py_unittest.add_argument(
-      '-t', '--target', required=True, choices=['appengine', 'core'])
+      '-t',
+      '--target',
+      required=True,
+      choices=['appengine', 'core', 'modules', 'cli'])
+  parser_py_unittest.add_argument(
+      '-c', '--config-dir', help='Config dir to use for module tests.')
 
-  parser_go_unittest = subparsers.add_parser(
-      'go_unittest', help='Run Go unit tests.')
-  parser_go_unittest.add_argument(
-      '-u',
-      '--unsuppress-output',
+
+def _add_lint_subparser(toplevel_subparsers):
+  """Adds a parser for the `lint` command."""
+  parser = toplevel_subparsers.add_parser(
+      'lint', help='Lint changed code in current branch.')
+  parser.add_argument(
+      '--type-check',
+      help='Also run the type checker on changed files.',
       action='store_true',
-      help='Unsuppress output from `print`. Good for debugging.')
-  parser_go_unittest.add_argument(
-      '-v', '--verbose', action='store_true', help='Print logs from tests.')
+      default=False)
+  parser.add_argument(
+      '--path',
+      dest='path',
+      default=None,
+      help=('The file or directory to lint. Default is to lint changed '
+            'files in current branch'))
+
+
+def _add_format_subparser(toplevel_subparsers):
+  """Adds a parser for the `format` command."""
+  parser = toplevel_subparsers.add_parser(
+      'format', help='Format changed code in current branch.')
+  parser.add_argument(
+      '--path',
+      dest='path',
+      default=None,
+      help=
+      'The file or directory to format. Default is to format changed files in '
+      'the current branch.')
+
+
+def _add_integration_tests_subparsers(toplevel_subparsers):
+  """Adds a parser for the `integration_tests` command."""
+  toplevel_subparsers.add_parser(
+      'integration_tests', help='Run end-to-end integration tests.')
+
+
+def _add_weights_fuzzer_subparser(weights_subparsers):
+  """Adds a parser for the `weights fuzzer` command."""
+  parser = weights_subparsers.add_parser(
+      'fuzzer', help='Interact with FuzzerJob weights.')
+  subparsers = parser.add_subparsers(dest='fuzzer_command')
+
+  subparsers.add_parser(
+      'platforms', help='List distinct platform field values.')
+
+  list_parser = subparsers.add_parser('list', help='List FuzzerJob entries.')
+  list_parser.add_argument(
+      '-p',
+      '--platforms',
+      help='Which platforms to list entries for.',
+      nargs='+')
+  list_parser.add_argument(
+      '-f', '--fuzzers', help='Which fuzzers to list entries for.', nargs='+')
+  list_parser.add_argument(
+      '-j', '--jobs', help='Which jobs to list entries for.', nargs='+')
+  list_parser.add_argument(
+      '--format',
+      help='Output format.',
+      choices=['text', 'csv'],
+      default='text')
+
+  aggregate_parser = subparsers.add_parser(
+      'aggregate', help='Aggregate matching FuzzerJob entries.')
+  aggregate_parser.add_argument(
+      '-p', '--platform', help='Which platform to query.', required=True)
+  aggregate_parser.add_argument(
+      '-f', '--fuzzers', help='Which fuzzers to aggregate.', nargs='+')
+  aggregate_parser.add_argument(
+      '-j', '--jobs', help='Which jobs to aggregate.', nargs='+')
+
+  set_parser = subparsers.add_parser(
+      'set', help='Set the weight of a FuzzerJob entry.')
+  set_parser.add_argument(
+      '-f',
+      '--fuzzer',
+      help='The fuzzer field of the entry to modify.',
+      required=True)
+  set_parser.add_argument(
+      '-j',
+      '--job',
+      help='The job field of the entry to modify.',
+      required=True)
+  set_parser.add_argument(
+      '-w',
+      '--weight',
+      help='The new weight to set.',
+      type=float,
+      required=True)
+
+
+def _add_weights_batches_subparser(weights_subparsers):
+  """Adds a parser for the `weights fuzzer-batch` command."""
+  parser = weights_subparsers.add_parser(
+      'fuzzer-batch',
+      help='Interact with FuzzerJobs weights. FuzzerJobs database entries ' +
+      'consist of batches of FuzzerJob entries that share the same platform. ' +
+      'These are periodically generated from FuzzerJob entries. Bots read ' +
+      'from FuzzerJobs batches in production instead of reading directly ' +
+      'from FuzzerJob entries.')
+  subparsers = parser.add_subparsers(dest='fuzzer_batch_command')
+
+  list_parser = subparsers.add_parser('list', help='List FuzzerJobs entries.')
+  list_parser.add_argument(
+      '-p',
+      '--platforms',
+      help='Which platforms to list entries for.',
+      nargs='+')
+  list_parser.add_argument(
+      '--format',
+      help='Output format.',
+      choices=['text', 'csv'],
+      default='text')
+
+
+def _add_weights_target_subparser(weights_subparsers):
+  """Adds a parser for the `weights fuzz-target` command."""
+  parser = weights_subparsers.add_parser(
+      'fuzz-target', help='Interact with FuzzTargetJob weights.')
+  subparsers = parser.add_subparsers(dest='fuzz_target_command')
+
+  list_parser = subparsers.add_parser(
+      'list', help='List FuzzTargetJob entries.')
+  list_parser.add_argument(
+      '-t',
+      '--targets',
+      help='Which fuzz target names to list entries for.',
+      nargs='+')
+  list_parser.add_argument(
+      '-j', '--jobs', help='Which jobs to list entries for.', nargs='+')
+  list_parser.add_argument(
+      '-e', '--engines', help='Which engine to list entries for.', nargs='+')
+  list_parser.add_argument(
+      '--format',
+      help='Output format.',
+      choices=['text', 'csv'],
+      default='text')
+
+  set_parser = subparsers.add_parser(
+      'set', help='Set the weight of a FuzzTargetJob entry.')
+  set_parser.add_argument(
+      '-t',
+      '--target',
+      help='The fuzz_target_name field of the entry to modify.',
+      required=True)
+  set_parser.add_argument(
+      '-j',
+      '--job',
+      help='The job field of the entry to modify.',
+      required=True)
+  set_parser.add_argument(
+      '-w',
+      '--weight',
+      help='The new weight to set.',
+      type=float,
+      required=True)
+
+
+def _add_weights_subparser(toplevel_subparsers):
+  """Adds a parser for the `weights` command."""
+  parser = toplevel_subparsers.add_parser(
+      'weights', help='Interact with fuzzer/job weights.')
+
+  parser.add_argument(
+      '-c', '--config-dir', required=True, help='Path to application config.')
+
+  subparsers = parser.add_subparsers(dest='weights_command')
+  _add_weights_fuzzer_subparser(subparsers)
+  _add_weights_batches_subparser(subparsers)
+  _add_weights_target_subparser(subparsers)
+
+
+def _add_schedule_tworker_fuzz_subparser(toplevel_subparsers):
+  """Adds a parser for the `schedule_tworker_fuzz` command."""
+  parser = toplevel_subparsers.add_parser(
+      'schedule_tworker_fuzz',
+      help='Inject a task directly into the tworker PREPROCESS_QUEUE.')
+  parser.add_argument(
+      '-c', '--config-dir', required=True, help='Path to application config.')
+  parser.add_argument(
+      '--non-dry-run',
+      action='store_true',
+      help='Run with actual datastore writes. Default to dry-run.')
+  parser.add_argument(
+      '--script_args',
+      action='extend',
+      nargs='+',
+      help='Script specific arguments (FUZZER_NAME JOB_NAME)')
+
+
+def _add_reproduce_subparser(toplevel_subparsers):
+  """Adds a parser for the `reproduce` command."""
+  parser = toplevel_subparsers.add_parser(
+      'reproduce', help='Reproduce a testcase locally.')
+  parser.add_argument(
+      '-c', '--config-dir', required=True, help='Path to application config.')
+  parser.add_argument(
+      '-t',
+      '--testcase-id',
+      required=True,
+      help='The testcase ID to reproduce.')
+
+
+def main():
+  """Parse the command-line args and invoke the right command."""
+  parser = _ArgumentParser(
+      description='Butler is here to help you with command-line tasks.')
+  parser.add_argument(
+      '--local-logging',
+      action='store_true',
+      default=False,
+      help='Force logs to be local-only.')
+  subparsers = parser.add_subparsers(dest='command')
 
   parser_js_unittest = subparsers.add_parser(
       'js_unittest', help='Run Javascript unit tests.')
@@ -144,14 +386,6 @@ def main():
       action='store_true',
       help=('Do not close browser when tests '
             'finish. Good for debugging.'))
-
-  subparsers.add_parser('format', help='Format changed code in current branch.')
-  subparsers.add_parser('lint', help='Lint changed code in current branch.')
-
-  parser_package = subparsers.add_parser(
-      'package', help='Package clusterfuzz with a staging revision')
-  parser_package.add_argument(
-      '-p', '--platform', choices=['linux', 'macos', 'windows', 'all'])
 
   parser_deploy = subparsers.add_parser('deploy', help='Deploy to Appengine')
   parser_deploy.add_argument(
@@ -166,9 +400,15 @@ def main():
   parser_deploy.add_argument(
       '--prod', action='store_true', help='Deploy to production.')
   parser_deploy.add_argument(
-      '--targets', nargs='*', default=['appengine', 'zips'])
+      '--targets',
+      nargs='*',
+      default=['appengine', 'terraform', 'zips'],
+      choices=['appengine', 'terraform', 'zips', 'test_deployment'])
   parser_deploy.add_argument(
-      '--with-go', action='store_true', help='Deploy Go services.')
+      '--release',
+      '-r',
+      choices=['prod', 'candidate', 'chrome-tests-syncer'],
+      default='prod')
 
   parser_run_server = subparsers.add_parser(
       'run_server', help='Run the local Clusterfuzz server.')
@@ -191,46 +431,28 @@ def main():
   parser_run_server.add_argument(
       '--clean', action='store_true', help='Clear existing database data.')
 
-  parser_run = subparsers.add_parser(
-      'run', help='Run a one-off script against a datastore (e.g. migration).')
-  parser_run.add_argument(
-      'script_name',
-      help='The script module name under `./local/butler/scripts`.')
-  parser_run.add_argument(
-      '--non-dry-run',
-      action='store_true',
-      help='Run with actual datastore writes. Default to dry-run.')
-  parser_run.add_argument(
-      '-c', '--config-dir', required=True, help='Path to application config.')
-  parser_run.add_argument(
-      '--local', action='store_true', help='Run against local server instance.')
-
   parser_run_bot = subparsers.add_parser(
       'run_bot', help='Run a local clusterfuzz bot.')
   parser_run_bot.add_argument(
       '--name', default='test-bot', help='Name of the bot.')
   parser_run_bot.add_argument(
-      '--skip-install-deps',
-      action='store_true',
-      help=('Don\'t install dependencies before running this command (useful '
-            'when you\'re restarting the bot often).'))
-  parser_run_bot.add_argument(
       '--server-storage-path',
       default='local/storage',
       help='Server storage path.')
   parser_run_bot.add_argument('directory', help='Directory to create bot in.')
+  parser_run_bot.add_argument(
+      '--android-serial',
+      help='Serial number of an Android device to connect to instead of '
+      'running normally.')
 
   parser_remote = subparsers.add_parser(
-      'remote', help=('Run command-line tasks on a remote bot.'))
+      'remote', help='Run command-line tasks on a remote bot.')
   _setup_args_for_remote(parser_remote)
 
   parser_clean_indexes = subparsers.add_parser(
-      'clean_indexes', help=('Clean up undefined indexes (in index.yaml).'))
+      'clean_indexes', help='Clean up undefined indexes (in index.yaml).')
   parser_clean_indexes.add_argument(
       '-c', '--config-dir', required=True, help='Path to application config.')
-
-  subparsers.add_parser(
-      'generate_datastore_models', help='Generate datastore models for Go.')
 
   parser_create_config = subparsers.add_parser(
       'create_config', help='Create a new deployment config.')
@@ -238,6 +460,11 @@ def main():
       'new_config_dir', type=str, help='The new config directory to create.')
   parser_create_config.add_argument(
       '--project-id', type=str, required=True, help='Your Cloud Project ID.')
+  parser_create_config.add_argument(
+      '--firebase-api-key',
+      type=str,
+      required=True,
+      help='Firebase web API key (for authentication).')
   parser_create_config.add_argument(
       '--oauth-client-secrets-path',
       type=str,
@@ -249,39 +476,49 @@ def main():
       default='us-central1-f',
       help='Region for GCE VMs.')
   parser_create_config.add_argument(
-      '--appengine-region',
+      '--appengine-location',
       type=str,
       default='us-central',
-      help='Region for App Engine.json.')
+      help='Location for App Engine.')
 
+  _add_run_subparser(subparsers)
+  _add_package_subparser(subparsers)
+  _add_bootstrap_subparser(subparsers)
+  _add_py_unittest_subparser(subparsers)
+  _add_lint_subparser(subparsers)
+  _add_format_subparser(subparsers)
+  _add_integration_tests_subparsers(subparsers)
+  _add_weights_subparser(subparsers)
+  _add_reproduce_subparser(subparsers)
+  _add_schedule_tworker_fuzz_subparser(subparsers)
   args = parser.parse_args()
+  if not args.command:
+    parser.print_help()
+    return 0
 
-  _setup()
-  command = importlib.import_module('local.butler.%s' % args.command)
-  command.execute(args)
+  _setup(args)
+  if args.command == 'schedule_tworker_fuzz':
+    command = importlib.import_module(
+        'local.butler.scripts.schedule_tworker_fuzz')
+  else:
+    command = importlib.import_module(f'local.butler.{args.command}')
+  return command.execute(args)
 
 
-def _setup():
+def _setup(args):
   """Set up configs and import paths."""
-  appengine_sdk_path = appengine.find_sdk_path()
-  sys.path.insert(0, appengine_sdk_path)
-
-  # This is necessary for our local environment, where googledatastore (old
-  # library used only in tests) depends on protobufs which have duplicate
-  # definitions in google-cloud-datastore. The python implementation of
-  # protobufs are more relaxed and allow this.
-  # TODO(ochang): Remove this once we no longer depend on googledatastore.
-  os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
-
   os.environ['ROOT_DIR'] = os.path.abspath('.')
+  os.environ['PYTHONIOENCODING'] = 'UTF-8'
+  os.environ['CLOUDSDK_PYTHON'] = sys.executable
 
   sys.path.insert(0, os.path.abspath(os.path.join('src')))
-  sys.path.insert(0, os.path.abspath(os.path.join('src', 'third_party')))
-
-  # Add our third_party libs before older appengine libs.
-  from python.base import modules
+  from clusterfuzz._internal.base import modules
   modules.fix_module_search_paths()
+
+  if args.local_logging:
+    from clusterfuzz._internal.system import environment
+    environment.set_local_log_only()
 
 
 if __name__ == '__main__':
-  main()
+  sys.exit(main())

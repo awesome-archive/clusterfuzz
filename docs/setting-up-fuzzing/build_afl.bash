@@ -20,33 +20,12 @@ CC=${CC:-clang}
 CXX=${CXX:-clang++}
 
 # Make sure we don't clobber anything in the current directory.
-mkdir -p afl-build
+rm -rf afl-build
+git clone --depth=1 https://github.com/AFLplusplus/AFLplusplus afl-build
 cd afl-build
 
-# Download AFL from Chromium repo (official download doesn't offer SSL)
-declare -a afl_sources=(
-  "afl-fuzz.c"
-  "afl-showmap.c"
-  "config.h"
-  "types.h"
-  "debug.h"
-  "alloc-inl.h"
-  "hash.h"
-  "Makefile"
-)
-for source_file in "${afl_sources[@]}"
-do
-  curl -O "https://cs.chromium.org/codesearch/f/chromium/src/third_party/afl/src/$source_file"
-done
-make afl-fuzz afl-showmap
+make source-only
+ar ru FuzzingEngine.a afl-compiler-rt.o utils/aflpp_driver/aflpp_driver.o
 
-# Build AFL runtime sources needed to link against the fuzz target.
-mkdir -p llvm_mode
-curl "https://cs.chromium.org/codesearch/f/chromium/src/third_party/afl/src/llvm_mode/afl-llvm-rt.o.c" > "llvm_mode/afl-llvm-rt.o.c"
-$CC -c llvm_mode/afl-llvm-rt.o.c -Wno-pointer-sign -O3
-curl -O "https://cs.chromium.org/codesearch/f/chromium/src/third_party/libFuzzer/src/afl/afl_driver.cpp"
-$CXX -c afl_driver.cpp -fsanitize=address -O3
-ar r FuzzingEngine.a afl-llvm-rt.o.o afl_driver.o
-
-mv FuzzingEngine.a afl-fuzz afl-showmap ../
+cp -f FuzzingEngine.a afl-fuzz afl-showmap ../
 echo "Success: link fuzz target against FuzzingEngine.a!"

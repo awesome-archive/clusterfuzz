@@ -17,22 +17,40 @@ import os
 
 from local.butler import common
 
+FIRST_PARTY_MODULES = [
+    'handlers',
+    'libs',
+    'clusterfuzz',
+]
 
-def execute(_):
+ISORT_CMD = ('isort --dont-order-by-type --force-single-line-imports '
+             '--force-sort-within-sections --line-length=80 ' + ' '.join(
+                 [f'-p {mod}' for mod in FIRST_PARTY_MODULES]) + ' ')
+
+
+def execute(args):
   """Format changed code."""
-  _, output = common.execute('git diff --name-only FETCH_HEAD')
+  if args.path:
+    diff_command = f'git ls-files {os.path.abspath(args.path)}'
+  elif os.path.exists('.git/FETCH_HEAD'):
+    diff_command = 'git diff --name-only FETCH_HEAD'
+  else:
+    # If not, fall back to diffing against HEAD.
+    diff_command = 'git diff --name-only HEAD'
 
+  _, output = common.execute(diff_command)
+  file_paths = [
+      f.decode('utf-8') for f in output.splitlines() if os.path.exists(f)
+  ]
   py_changed_file_paths = [
-      f for f in output.splitlines() if f.endswith('.py') and
+      f for f in file_paths if f.endswith('.py') and
       # Exclude auto-generated files.
       not f.endswith('_pb2.py') and not f.endswith('_pb2_grpc.py')
   ]
-  go_changed_file_paths = [f for f in output.splitlines() if f.endswith('.go')]
-
-  for file_path in py_changed_file_paths:
-    if os.path.exists(file_path):
-      common.execute('yapf -i ' + file_path)
+  if py_changed_file_paths:
+    common.execute(f'yapf -p -i {" ".join(py_changed_file_paths)}')
+    common.execute(f'{ISORT_CMD} {" ".join(py_changed_file_paths)}')
+  go_changed_file_paths = [f for f in file_paths if f.endswith('.go')]
 
   for file_path in go_changed_file_paths:
-    if os.path.exists(file_path):
-      common.execute('gofmt -w ' + file_path)
+    common.execute('gofmt -w ' + file_path)

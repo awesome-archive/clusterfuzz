@@ -13,7 +13,7 @@
 # limitations under the License.
 """Query handles pagination and OR conditions with its best effort."""
 
-from google.appengine.api import datastore_errors
+from google.cloud.ndb import exceptions
 
 from libs.query import base
 
@@ -52,15 +52,15 @@ def _combine(q1, q2):
   return result
 
 
-class _Run(object):
+class _Run:
   """Encapsulate a query and its run."""
 
   def __init__(self, query, **kwargs):
     self.query = query
-    self.result = query.iter(produce_cursors=True, **kwargs)
+    self.result = query.iter(**kwargs)
 
 
-class _KeyQuery(object):
+class _KeyQuery:
   """Query only keys. It supports an OR condition."""
 
   def __init__(self, model):
@@ -163,8 +163,7 @@ class _KeyQuery(object):
               q.to_datastore_query(),
               keys_only=False,
               projection=[self.order_property],
-              limit=total,
-              batch_size=total))
+              limit=total))
     return runs
 
   def _get_total_count(self, runs, offset, limit, items, more_limit):
@@ -180,7 +179,7 @@ class _KeyQuery(object):
     for run in runs:
       try:
         cursor = run.result.cursor_after()
-      except datastore_errors.BadArgumentError:
+      except exceptions.BadArgumentError:
         # iterator had no results.
         cursor = None
 
@@ -190,10 +189,9 @@ class _KeyQuery(object):
               start_cursor=cursor,
               keys_only=True,
               projection=None,
-              limit=more_limit,
-              batch_size=more_limit))
+              limit=more_limit))
 
-    keys = set([item.key.id() for item in items])
+    keys = {item.key.id() for item in items}
     for run in more_runs:
       for key in run.result:
         keys.add(key)
@@ -215,7 +213,7 @@ class _KeyQuery(object):
           items[item.key.id()] = item
 
     items = sorted(
-        items.values(),
+        list(items.values()),
         reverse=self.order_desc,
         key=_get_key_fn(self.order_property))
 
@@ -281,13 +279,17 @@ class Query(base.Query):
 
   def fetch_page(self, page, page_size, projection, more_limit):
     """Return the items, total_pages, total_items, and has_more."""
+
+    # Validation check to convert all negative page numbers to 1.
+    page = max(page, 1)
+
     items, total_items, has_more = self.fetch(
         offset=(page - 1) * page_size,
         limit=page_size,
         projection=projection,
         more_limit=more_limit)
 
-    total_pages = total_items / page_size
+    total_pages = total_items // page_size
     if (total_items % page_size) > 0:
       total_pages += 1
 

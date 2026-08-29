@@ -15,10 +15,9 @@
   testcase detail page. This can't be with common.crash_stats because it imports
   specific libraries on appengine."""
 
+from clusterfuzz._internal.metrics import crash_stats
 from libs import helpers
 from libs.query import big_query_query
-
-from metrics import crash_stats
 
 # We don't allow showing more than 3 days when viewing by hours because it'd
 # break the UI.
@@ -33,12 +32,12 @@ class Query(big_query_query.Query):
     self.days = None
     self.block = None
     self.group_by = None
-    super(Query, self).__init__()
+    super().__init__()
 
   def set_time_params(self, end, days, block):
     """Set time-related params."""
     if block == 'hour' and days > MAX_DAYS_FOR_BY_HOURS:
-      raise helpers.EarlyExitException(
+      raise helpers.EarlyExitError(
           ('When viewing by hours, selecting more than %d days is not allowed.'
            % MAX_DAYS_FOR_BY_HOURS), 400)
 

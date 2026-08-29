@@ -13,9 +13,13 @@
 # limitations under the License.
 """Handler that gets the testcase list page."""
 
-from base import utils
-from datastore import data_handler
-from datastore import data_types
+from flask import request
+
+from clusterfuzz._internal.base import errors
+from clusterfuzz._internal.base import utils
+from clusterfuzz._internal.datastore import data_handler
+from clusterfuzz._internal.datastore import data_types
+from clusterfuzz._internal.google_cloud_utils import blobs
 from handlers import base_handler
 from libs import crash_access
 from libs import filters
@@ -39,8 +43,10 @@ FIELDS = [
     'group_id',
     'project_name',
     'platform',
+    'impact_extended_stable_version',
     'impact_stable_version',
     'impact_beta_version',
+    'impact_head_version',
     'is_impact_set_flag',
 ]
 
@@ -64,6 +70,8 @@ KEYWORD_FILTERS = [
     GroupFilter(),
     filters.String('bug_indices', 'issue'),
     filters.String('platform', 'platform'),
+    filters.String('impact_extended_stable_version_indices', 'extended_stable'),
+    filters.String('impact_head_version_indices', 'head'),
     filters.String('impact_stable_version_indices', 'stable'),
     filters.String('impact_beta_version_indices', 'beta'),
     filters.String('fuzzer_name_indices', 'fuzzer'),
@@ -102,11 +110,10 @@ def add_filters(query, params):
   filters.add(query, params, FILTERS)
 
 
-def get_result(this):
+def get_result():
   """Get the result for the testcase list page."""
-  params = {k: v for k, v in this.request.iterparams()}
-  page = helpers.cast(
-      this.request.get('page') or 1, int, "'page' is not an int.")
+  params = dict(request.iterparams())
+  page = helpers.cast(request.get('page') or 1, int, "'page' is not an int.")
 
   query = datastore_query.Query(data_types.Testcase)
   crash_access.add_scope(query, params, 'security_flag', 'job_type',
@@ -137,8 +144,10 @@ def get_result(this):
         'isSecurity': testcase.security_flag,
         'isImpactSet': testcase.is_impact_set_flag,
         'impacts': {
+            'extendedStable': testcase.impact_extended_stable_version,
             'stable': testcase.impact_stable_version,
             'beta': testcase.impact_beta_version,
+            'head': testcase.impact_head_version,
         },
         'regressionRange': regression_range,
         'fixedRange': fixed_range,
@@ -171,21 +180,15 @@ class Handler(base_handler.Handler):
   """Handler that gets the testcase list when user first lands on the page."""
 
   @handler.get(handler.HTML)
+  @handler.oauth
   def get(self):
     """Get and render the testcase list in HTML."""
-    result, params = get_result(self)
+    result, params = get_result()
     field_values = {
-        'projects':
-            data_handler.get_all_project_names(),
-        'fuzzers':
-            data_handler.get_all_fuzzer_names_including_children(
-                include_parents=True),
-        'jobs':
-            data_handler.get_all_job_type_names(),
-        'shouldShowImpact':
-            utils.is_chromium()
+        'projects': data_handler.get_all_project_names(),
+        'shouldShowImpact': utils.is_chromium()
     }
-    self.render('testcase-list.html', {
+    return self.render('testcase-list.html', {
         'fieldValues': field_values,
         'result': result,
         'params': params
@@ -195,22 +198,31 @@ class Handler(base_handler.Handler):
 class CacheHandler(base_handler.Handler):
   """Handler for exercising cache."""
 
-  @handler.check_cron()
+  @handler.cron()
   def get(self):
     """Handle a GET request."""
     # pylint: disable=unexpected-keyword-arg
+
+    # Memoize all project and job names.
     _ = data_handler.get_all_project_names(__memoize_force__=True)
     _ = data_handler.get_all_job_type_names(__memoize_force__=True)
 
-    # Memorize both variants of get_all_fuzzer_names_including_children.
+    # Memoize both variants of get_all_fuzzer_names_including_children.
     _ = data_handler.get_all_fuzzer_names_including_children(
         include_parents=True, __memoize_force__=True)
     _ = data_handler.get_all_fuzzer_names_including_children(
         __memoize_force__=True)
 
-    self.response.headers['Content-Type'] = 'text/plain'
-    self.response.out.write('OK')
-    self.response.set_status(200)
+    # Memoize expensive testcase attribute calls.
+    for testcase_id in data_handler.get_open_testcase_id_iterator():
+      try:
+        testcase = data_handler.get_testcase_by_id(testcase_id)
+      except errors.InvalidTestcaseError:
+        # Already deleted.
+        continue
+
+      blobs.get_blob_size(testcase.fuzzed_keys)
+      blobs.get_blob_size(testcase.minimized_keys)
 
 
 class JsonHandler(base_handler.Handler):
@@ -220,5 +232,5 @@ class JsonHandler(base_handler.Handler):
   @handler.oauth
   def post(self):
     """Get and render the testcase list in JSON."""
-    result, _ = get_result(self)
-    self.render_json(result)
+    result, _ = get_result()
+    return self.render_json(result)

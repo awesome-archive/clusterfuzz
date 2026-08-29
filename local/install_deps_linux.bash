@@ -14,7 +14,38 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Check for lsb_release command in $PATH
+# Process command line arguments.
+while [ "$1" != "" ]; do
+  case $1 in
+    --install-android-emulator)
+      install_android_emulator=1
+      ;;
+  esac
+  shift
+done
+
+if [ -z "$PYTHON" ]; then
+  if which python3.11 > /dev/null; then
+    export PYTHON='python3.11'
+  elif which python3.10 > /dev/null; then
+    export PYTHON='python3.10'
+  elif which python3.9 > /dev/null; then
+    export PYTHON='python3.9'
+  elif which python3.8 > /dev/null; then
+    export PYTHON='python3.8'
+  else
+    export PYTHON='python3'
+  fi
+fi
+
+if ! which "$PYTHON" > /dev/null; then
+  echo "python $PYTHON not found"
+  exit 1
+fi
+
+version=$($PYTHON --version 2>&1 | cut -f2 -d' ')
+
+# Check for lsb_release command in $PATH.
 if ! which lsb_release > /dev/null; then
   echo "ERROR: lsb_release not found in \$PATH" >&2
   exit 1;
@@ -23,16 +54,16 @@ fi
 # Check if the distro is supported.
 distro_codename=$(lsb_release --codename --short)
 distro_id=$(lsb_release --id --short)
-supported_codenames="(trusty|xenial|artful|bionic|cosmic)"
+supported_codenames="(xenial|artful|bionic|cosmic|focal|noble)"
 supported_ids="(Debian)"
 if [[ ! $distro_codename =~ $supported_codenames &&
       ! $distro_id =~ $supported_ids ]]; then
   echo -e "ERROR: The only supported distros are\n" \
-    "\tUbuntu 14.04 LTS (trusty)\n" \
     "\tUbuntu 16.04 LTS (xenial)\n" \
     "\tUbuntu 17.10 (artful)\n" \
     "\tUbuntu 18.04 LTS (bionic)\n" \
     "\tUbuntu 18.10 LTS (cosmic)\n" \
+    "\tUbuntu 20.04 LTS (focal)\n" \
     "\tDebian 8 (jessie) or later" >&2
   exit 1
 fi
@@ -43,77 +74,68 @@ if ! uname -m | egrep -q "i686|x86_64"; then
   exit
 fi
 
+# Install packages that we depend on.
+sudo apt-get update
+sudo apt-get install -y \
+    blackbox \
+    curl \
+    libpython3-all-dev \
+    pipenv \
+    python3-dev \
+    python3-pip \
+    unzip \
+    xvfb
+
 # Prerequisite for add-apt-repository.
 sudo apt-get install -y apt-transport-https software-properties-common
 
-# Add needed apt-get repos. Not needed on Goobuntu (rodete).
-if [ "$distro_codename" != "rodete" ]; then
+if [ "$distro_codename" == "rodete" ]; then
+  if ! which docker > /dev/null 2>&1; then
+    glogin
+    sudo glinux-add-repo docker-ce-"$distro_codename"
+  fi
+else
   curl -fsSL https://download.docker.com/linux/${distro_id,,}/gpg | \
-     sudo apt-key add -
+      sudo apt-key add -
   sudo add-apt-repository -y \
-     "deb [arch=amd64] https://download.docker.com/linux/${distro_id,,} \
-     $(lsb_release -cs) \
-     stable"
+      "deb [arch=amd64] https://download.docker.com/linux/${distro_id,,} \
+      $distro_codename \
+      stable"
 
-  echo "deb [arch=amd64] http://storage.googleapis.com/bazel-apt stable jdk1.8" \
-      | sudo tee /etc/apt/sources.list.d/bazel.list
-  curl https://bazel.build/bazel-release.pub.gpg | sudo apt-key add -
+  export CLOUD_SDK_REPO="cloud-sdk"
+  export APT_FILE=/etc/apt/sources.list.d/google-cloud-sdk.list
+  export APT_LINE="deb http://packages.cloud.google.com/apt $CLOUD_SDK_REPO main"
+  sudo bash -c "grep -x \"$APT_LINE\" $APT_FILE || (echo $APT_LINE | tee -a $APT_FILE)"
 
-  export CLOUD_SDK_REPO="cloud-sdk-$(lsb_release -c -s)"
-  echo "deb http://packages.cloud.google.com/apt $CLOUD_SDK_REPO main" | \
-      sudo tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
   curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | \
       sudo apt-key add -
 
 fi
 
-# Set java_package so we know which to install.
-if [ "$distro_codename" == "trusty" ]; then
-  sudo add-apt-repository -y ppa:webupd8team/java
-  java_package=oracle-java8-installer
-else
-  java_package=openjdk-8-jdk
-fi
-
 # Install apt-get packages.
 sudo apt-get update
 sudo apt-get install -y \
-    bazel \
     docker-ce \
-    google-cloud-sdk \
-    $java_package    \
-    liblzma-dev \
-    python-dev \
-    python-pip \
-    python-virtualenv \
-    unzip \
-    xvfb
+    google-cloud-cli \
+    openjdk-17-jdk \
+    liblzma-dev
 
-# Install patchelf (latest version, also unavailable on 14.04).
+# Install patchelf - latest version not available on some older distros so we
+# compile from source.
 # Needed for MemorySanitizer to patch instrumented system libraries into the
 # target binary (using RPATH).
-(cd /tmp && \
-    curl -sS https://nixos.org/releases/patchelf/patchelf-0.9/patchelf-0.9.tar.bz2 \
-    | tar -C /tmp -xj && \
-    cd /tmp/patchelf-*/ && \
-    ./configure && \
-    sudo make install && \
-    sudo rm -rf /tmp/patchelf-*)
-
-# Setup virtualenv.
-rm -rf ENV
-virtualenv ENV
-source ENV/bin/activate
-
-# Install needed python packages.
-pip install --upgrade pip
-pip install --upgrade -r docker/ci/requirements.txt
-pip install --upgrade -r src/local/requirements.txt
-
-# Install other dependencies (e.g. bower).
-nodeenv -p --prebuilt
-npm install -g bower polymer-bundler
-bower install
+unsupported_codenames="(xenial|jessie)"
+if [[ $distro_codename =~ $unsupported_codenames ]]; then
+    (cd /tmp && \
+        curl -sS https://releases.nixos.org/patchelf/patchelf-0.9/patchelf-0.9.tar.bz2 \
+        | tar -C /tmp -xj && \
+        cd /tmp/patchelf-*/ && \
+        ./configure && \
+        sudo make install && \
+        sudo rm -rf /tmp/patchelf-*)
+else
+    sudo apt-get install -y patchelf
+fi
 
 # Install gcloud dependencies.
 if gcloud components install --quiet beta; then
@@ -125,24 +147,23 @@ if gcloud components install --quiet beta; then
       cloud-datastore-emulator \
       pubsub-emulator
 else
-  # Either Cloud SDK component manager is disabled (default on GCE), or google-cloud-sdk package is
+  # Either Cloud SDK component manager is disabled (default on GCE), or google-cloud-cli package is
   # installed via apt-get.
-  sudo apt-get install -y \
-      google-cloud-sdk-app-engine-go \
-      google-cloud-sdk-app-engine-python \
-      google-cloud-sdk-app-engine-python-extras \
-      google-cloud-sdk \
-      google-cloud-sdk-datastore-emulator \
-      google-cloud-sdk-pubsub-emulator
+  # Note: app-engine-python, app-engine-python-extras, and pubsub-emulator apt packages are optional on rodete (b/414408644, b/484368884).
+  if [ "$distro_codename" == "rodete" ]; then
+    sudo apt-get install -y \
+        google-cloud-cli \
+        google-cloud-cli-datastore-emulator
+  else
+    sudo apt-get install -y \
+        google-cloud-cli \
+        google-cloud-cli-app-engine-go \
+        google-cloud-cli-app-engine-python \
+        google-cloud-cli-app-engine-python-extras \
+        google-cloud-cli-datastore-emulator \
+        google-cloud-cli-pubsub-emulator
+  fi
 fi
 
-# Bootstrap code structure.
-python butler.py bootstrap
-
-set +x
-echo "
-
-Installation succeeded!
-Please load virtualenv environment by running 'source ENV/bin/activate'.
-
-"
+dir=$(dirname "$0")
+"$dir"/install_python_deps_linux.bash $*

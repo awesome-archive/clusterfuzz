@@ -13,10 +13,13 @@
 # limitations under the License.
 """Handler for updating issue."""
 
-from datastore import data_handler
+from flask import request
+
+from clusterfuzz._internal.datastore import data_handler
+from clusterfuzz._internal.issue_management import issue_filer
+from clusterfuzz._internal.issue_management import issue_tracker_policy
 from handlers import base_handler
 from handlers.testcase_detail import show
-from issue_management import issue_filer
 from libs import handler
 from libs import helpers
 
@@ -29,36 +32,35 @@ class Handler(base_handler.Handler):
     """Associate (or update) an existing issue with the testcase."""
     issue_id = helpers.cast(issue_id, int,
                             'Issue ID (%s) is not a number!' % issue_id)
-    itm = helpers.get_issue_tracker_manager(testcase)
+    issue_tracker = helpers.get_issue_tracker_for_testcase(testcase)
 
-    issue = helpers.get_or_exit(lambda: itm.get_issue(issue_id),
+    issue = helpers.get_or_exit(lambda: issue_tracker.get_issue(issue_id),
                                 'Issue (id=%d) is not found!' % issue_id,
                                 'Failed to get the issue (id=%s).' % issue_id,
                                 Exception)
 
-    if not issue.open:
-      raise helpers.EarlyExitException(
+    if not issue.is_open:
+      raise helpers.EarlyExitError(
           ('The issue (%d) is already closed and further updates are not'
            ' allowed. Please file a new issue instead!') % issue_id, 400)
 
-    # Create issue parameters.
-    issue.comment = data_handler.get_issue_description(testcase,
+    if not testcase.is_crash():
+      raise helpers.EarlyExitError(
+          'This is not a crash testcase, so issue update is not applicable.',
+          400)
+
+    issue_comment = data_handler.get_issue_description(testcase,
                                                        helpers.get_user_email())
-    issue_summary = data_handler.get_issue_summary(testcase)
+    if needs_summary_update:
+      issue.title = data_handler.get_issue_summary(testcase)
 
-    # NULL states leads to unhelpful summaries, so do not update in that case.
-    if needs_summary_update and testcase.crash_state != 'NULL':
-      issue.summary = issue_summary
+    policy = issue_tracker_policy.get(issue_tracker.project)
+    properties = policy.get_existing_issue_properties()
+    for label in properties.labels:
+      for result in issue_filer.apply_substitutions(policy, label, testcase):
+        issue.labels.add(result)
 
-    # Add label on memory tool used.
-    issue_filer.add_memory_tool_label_if_needed(issue, testcase)
-
-    # Add view restrictions for internal job types.
-    issue_filer.add_view_restrictions_if_needed(issue, testcase)
-
-    # Don't enforce security severity label on an existing issue.
-
-    itm.save(issue)
+    issue.save(new_comment=issue_comment)
 
     testcase.bug_information = str(issue_id)
     testcase.put()
@@ -73,8 +75,8 @@ class Handler(base_handler.Handler):
   @handler.check_testcase_access
   def post(self, testcase):
     """Update an issue."""
-    issue_id = self.request.get('issueId')
-    needs_summary_update = self.request.get('needsSummaryUpdate')
+    issue_id = request.get('issueId')
+    needs_summary_update = request.get('needsSummaryUpdate')
 
     self.update_issue(testcase, issue_id, needs_summary_update)
-    self.render_json(show.get_testcase_detail(testcase))
+    return self.render_json(show.get_testcase_detail(testcase))

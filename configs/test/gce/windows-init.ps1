@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+Set-PSDebug -Trace 1
 Write-Host "Start"
 
 # Helper variables.
-$appengineDir = 'c:\google_appengine'
-$appengineFile = 'google_appengine_1.9.72.zip'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $webClient = New-Object System.Net.WebClient
 $webClient.Headers.add('Metadata-Flavor', 'Google')
 $hostName = ($webClient.DownloadString('http://metadata.google.internal/computeMetadata/v1/instance/hostname')).split('.')[0]
@@ -30,8 +30,8 @@ $nfsHost = '10.0.0.2'
 $nfsVolume = 'cfvolume'
 $nfsRoot = If (Test-Connection $nfsHost) {'X:\'} Else {''}
 
-$registrySetFilePath = 'c:\registry.run'
-$scriptExecutedFilePath = 'c:\script.run'
+$registrySetupFilePath = 'c:\registry.setup'
+$packageSetupFilePath = 'c:\package.setup.1'
 
 # Create clusterfuzz admin account.
 $domain = 'CLUSTERFUZZ-WIN'
@@ -53,19 +53,20 @@ else {
 Add-WindowsFeature NFS-Client
 
 # Set registry keys.
-$s = "if not exist $registrySetFilePath ( netdom renamecomputer %COMPUTERNAME% /Newname $hostName /force`nreg add `"HKLM\SOFTWARE\Policies\Microsoft\Windows Defender`" /v DisableAntispyware /t REG_DWORD /f /d 1`nreg add `"HKLM\SYSTEM\CurrentControlSet\Control\Windows`" /v NoInteractiveServices /t REG_DWORD /f /d 0`nreg add `"HKLM\SYSTEM\ControlSet001\Control\FileSystem`" /v LongPathsEnabled /t REG_DWORD /f /d 1`nreg add `"HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`" /v LongPathsEnabled /t REG_DWORD /f /d 1`nreg add `"HKLM\Software\Microsoft\ClientForNFS\CurrentVersion\Default`" /v AnonymousUid /t REG_DWORD /f /d 1337`nreg add `"HKLM\Software\Microsoft\ClientForNFS\CurrentVersion\Default`" /v AnonymousGid /t REG_DWORD /f /d 1337`nreg add `"HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon`" /v AutoAdminLogon /t REG_SZ /f /d 1`nreg add `"HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon`" /v DefaultUserName /t REG_SZ /f /d $username`nreg add `"HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon`" /v DefaultPassword /t REG_SZ /f /d `"$password`"`nreg add `"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`" /v DefaultDomainName /t REG_SZ /d `"CLUSTERFUZZ-WIN`" /f`nreg add `"HKLM\Software\Microsoft\Windows\Windows Error Reporting`" /v Disabled /t REG_DWORD /f /d 1`nreg add `"HKLM\Software\Microsoft\Windows\Windows Error Reporting`" /v DontShowUI /t REG_DWORD /f /d 1`nreg add `"HKCU\Software\Microsoft\Windows\Windows Error Reporting`" /v Disabled /t REG_DWORD /f /d 1`nreg add `"HKCU\Software\Microsoft\Windows\Windows Error Reporting`" /v DontShowUI /t REG_DWORD /f /d 1`ncopy NUL $registrySetFilePath`n# shutdown -t 30 -r -f`n)`n"
+$s = "if not exist $registrySetupFilePath ( netdom renamecomputer %COMPUTERNAME% /Newname $hostName /force`nreg add `"HKLM\SOFTWARE\Policies\Microsoft\Windows Defender`" /v DisableAntispyware /t REG_DWORD /f /d 1`nreg add `"HKLM\SYSTEM\CurrentControlSet\Control\Windows`" /v NoInteractiveServices /t REG_DWORD /f /d 0`nreg add `"HKLM\SYSTEM\ControlSet001\Control\FileSystem`" /v LongPathsEnabled /t REG_DWORD /f /d 1`nreg add `"HKLM\SYSTEM\CurrentControlSet\Control\FileSystem`" /v LongPathsEnabled /t REG_DWORD /f /d 1`nreg add `"HKLM\Software\Microsoft\ClientForNFS\CurrentVersion\Default`" /v AnonymousUid /t REG_DWORD /f /d 1337`nreg add `"HKLM\Software\Microsoft\ClientForNFS\CurrentVersion\Default`" /v AnonymousGid /t REG_DWORD /f /d 1337`nreg add `"HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon`" /v AutoAdminLogon /t REG_SZ /f /d 1`nreg add `"HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon`" /v DefaultUserName /t REG_SZ /f /d $username`nreg add `"HKLM\Software\Microsoft\Windows NT\CurrentVersion\Winlogon`" /v DefaultPassword /t REG_SZ /f /d `"$password`"`nreg add `"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`" /v DefaultDomainName /t REG_SZ /d `"CLUSTERFUZZ-WIN`" /f`nreg add `"HKLM\Software\Microsoft\Windows\Windows Error Reporting`" /v Disabled /t REG_DWORD /f /d 1`nreg add `"HKLM\Software\Microsoft\Windows\Windows Error Reporting`" /v DontShowUI /t REG_DWORD /f /d 1`nreg add `"HKCU\Software\Microsoft\Windows\Windows Error Reporting`" /v Disabled /t REG_DWORD /f /d 1`nreg add `"HKCU\Software\Microsoft\Windows\Windows Error Reporting`" /v DontShowUI /t REG_DWORD /f /d 1`ncopy NUL $registrySetupFilePath`n# shutdown -t 30 -r -f`n)`n"
 Set-Content c:\autologin.bat $s
 
 # Set the following variable globally in system environment.
 setx /M PYTHONUNBUFFERED "1"
 setx /M PYTHONDONTWRITEBYTECODE "1"
+setx /M PYTHONIOENCODING "UTF-8"
 setx /M RUBY_GC_HEAP_OLDOBJECT_LIMIT_FACTOR "0.9"
 
 # Set startup script contents.
-$s = "if not exist $registrySetFilePath ( EXIT )`nw32tm /resync`nnetsh winhttp import proxy source=ie`nnfsadmin client config protocol=tcp+udp UseReservedPorts=yes`nnfsadmin client stop`nnfsadmin client start`nset NFS_HOST=$nfsHost`nset NFS_VOLUME=$nfsVolume`nset NFS_ROOT=$nfsRoot`nmount -o anon -o nolock -o retry=10 $nfsHost`:/$nfsVolume $nfsRoot`nnet start w32time`nw32tm /resync`nset PREEMPTIBLE=$preemptible`nset QUEUE_OVERRIDE=$queueOverride`nset USER=bot`nset BOT_TMPDIR=c:\tmp`nset PYTHONPATH=c:\google_appengine;c:\clusterfuzz\src`nset ROOT_DIR=c:\clusterfuzz`nset PATH=c:\java\bin;c:\python27;c:\nodejs;c:\Program Files (x86)\Windows Kits\10\Debuggers\x64;c:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin;%PATH%`nc: `ncd \ `ncd clusterfuzz\src\python\bot\startup `npython -W ignore run.py"
+$s = "if not exist $registrySetupFilePath ( EXIT )`nw32tm /resync`nnetsh winhttp import proxy source=ie`nnfsadmin client config protocol=tcp+udp UseReservedPorts=yes`nnfsadmin client stop`nnfsadmin client start`nset NFS_HOST=$nfsHost`nset NFS_VOLUME=$nfsVolume`nset NFS_ROOT=$nfsRoot`nmount -o anon -o nolock -o retry=10 $nfsHost`:/$nfsVolume $nfsRoot`nnet start w32time`nw32tm /resync`nset PREEMPTIBLE=$preemptible`nset QUEUE_OVERRIDE=$queueOverride`nset USER=bot`nset BOT_TMPDIR=c:\tmp`nset PYTHONPATH=c:\clusterfuzz\src`nset ROOT_DIR=c:\clusterfuzz`nset PATH=c:\java\bin;c:\python311;c:\python27;c:\Windows\System32;c:\nodejs;c:\Program Files (x86)\Windows Kits\10\Debuggers\x64;c:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin;%PATH%`nc: `ncd \ `ncd clusterfuzz\src\python\bot\startup `npython -W ignore run.py"
 Set-Content c:\startup.bat $s
 
-if (!(Test-Path ($scriptExecutedFilePath))) {
+if (!(Test-Path ($packageSetupFilePath))) {
 
 # Create helpers.
 $shell = new-object -com shell.application
@@ -93,59 +94,74 @@ if (!(Test-Path ($tmp2))) {
 # Download Windows 10 SDK.
 $fileName = "$tmp\winsdksetup.exe"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/winsdksetup.exe", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/winsdksetup.exe", $fileName)
   cmd /c $fileName /q
 }
 
 # Download Visual C++ 2013 redistributable package (64-bit).
-$fileName = "$tmp\vcredist_x64.exe"
+$fileName = "$tmp\vcredist_2013_x64.exe"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/vcredist_x64.exe", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/vcredist_2013_x64.exe", $fileName)
   cmd /c $fileName /q
 }
 
 # Download Visual C++ 2013 redistributable package (32-bit).
-$fileName = "$tmp\vcredist_x86.exe"
+$fileName = "$tmp\vcredist_2013_x86.exe"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/vcredist_x86.exe", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/vcredist_2013_x86.exe", $fileName)
+  cmd /c $fileName /q
+}
+
+# Download Visual C++ 2015/2017/2019 redistributable package (64-bit).
+$fileName = "$tmp\vcredist_2015_x64.exe"
+if (!(Test-Path ($fileName))) {
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/vcredist_2015_x64.exe", $fileName)
+  cmd /c $fileName /q
+}
+
+# Download Visual C++ 2015/2017/2019 redistributable package (32-bit).
+$fileName = "$tmp\vcredist_2015_x86.exe"
+if (!(Test-Path ($fileName))) {
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/vcredist_2015_x86.exe", $fileName)
   cmd /c $fileName /q
 }
 
 # Download VS 2008 compiler for python packages.
 $fileName = "$tmp\VCForPython27.msi"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/VCForPython27.msi", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/VCForPython27.msi", $fileName)
   cmd /c msiexec /i $fileName /quiet /qn /norestart
 }
 
 # Download msdia120.dll, needed for llvm symbolizer to work.
 $fileName = "$tmp\msdia120.dll"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/msdia120.dll", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/msdia120.dll", $fileName)
   cmd /c regsvr32 /s $fileName
 }
 
 # Download msdia140.dll, needed for llvm symbolizer to work.
 $fileName = "$tmp\msdia140.dll"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/msdia140.dll", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/msdia140.dll", $fileName)
   cmd /c regsvr32 /s $fileName
 }
 
 # Install Python 2.7.15.
 $fileName = "$tmp\python-2.7.15.amd64.msi"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/python-2.7.15.amd64.msi", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/python-2.7.15.amd64.msi", $fileName)
   Remove-Item c:\python27 -Recurse -ErrorAction Ignore
   cmd /c msiexec /qn /i $fileName TARGETDIR=c:\python27
 }
 
-# Download Appengine SDK.
-$fileName = "$tmp\$appengineFile"
+Copy-Item "c:\python27\python.exe" -Destination "c:\python27\python2.exe"
+
+$fileName = "$tmp\python-3.11.4-amd64.exe"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/$appengineFile", $fileName)
-    Remove-Item $appengineDir -Recurse -ErrorAction Ignore
-  unzip $fileName
+  $webClient.DownloadFile("https://www.python.org/ftp/python/3.11.4/python-3.11.4-amd64.exe", $fileName)
+  Remove-Item c:\python311 -Recurse -ErrorAction Ignore
+  cmd /c $fileName /quiet InstallAllUsers=1 Include_test=0 TargetDir=c:\python311
 }
 
 # Install specific python package versions.
@@ -153,74 +169,52 @@ cmd /c c:\python27\python -m ensurepip --default-pip
 cmd /c c:\python27\python -m pip install -U pip
 cmd /c c:\python27\python -m pip install -U setuptools
 cmd /c c:\python27\python -m pip install -U wheel
-cmd /c c:\python27\python -m pip install crcmod==1.7 pyOpenSSL==17.4.0 pywinauto==0.6.4 psutil==5.4.7
+cmd /c c:\python27\python -m pip install crcmod==1.7 cryptography==3.3.2 pyOpenSSL==17.4.0 pywinauto==0.6.4 psutil==5.4.7 future==0.17.1
+
+cmd /c c:\python311\python -m pip install -U pip
+cmd /c c:\python311\python -m pip install pipenv
 
 # Install NodeJS.
 $fileName = "$tmp\nodejs.zip"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/nodejs.zip", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/nodejs.zip", $fileName)
   unzip $fileName
 }
 
 # Install Java.
-$fileName = "$tmp\jre-7u80-windows-i586.exe"
+$fileName = "$tmp\openjdk-11.0.2_windows-x64_bin.zip"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/jre-7u80-windows-i586.exe", $fileName)
-  cmd /c $fileName /s INSTALLDIR=c:\java STATIC=1
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/openjdk-11.0.2_windows-x64_bin.zip", $fileName)
+  unzip $fileName
+  mv C:\jdk-11.0.2 C:\java
 }
 
 # Install Chrome, helps to install the google crash handler.
 $fileName = "$tmp\ChromeSetup.exe"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/ChromeSetup.exe", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/ChromeSetup.exe", $fileName)
   cmd /c $fileName /silent /installsource silent /install
 }
 
 # Install Google crash handler.
 $fileName = "$tmp\GoogleUpdateSetup.exe"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/GoogleUpdateSetup.exe", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/GoogleUpdateSetup.exe", $fileName)
   cmd /c $fileName /install "runtime=true^&needsadmin=false" /silent
 }
 
 # Download PSTools
 $fileName = "$tmp\pstools.zip"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/PSTools.zip", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/PSTools.zip", $fileName)
   unzip $fileName
-}
-
-# Download and install google-fluentd
-$fileName = "$tmp\StackdrvierLogging-v1-3.exe"
-if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://dl.google.com/cloudagents/windows/StackdriverLogging-v1-3.exe", $fileName)
-  cmd /c $fileName /S
-
-  $configFile = "C:\GoogleStackdriverLoggingAgent\fluent.conf"
-  $loggingConfig = @"
-    `r
-    <source>`r
-      type tcp`r
-      format json`r
-      port 5170`r
-      bind 127.0.0.1`r
-      tag bot`r
-    </source>`r
-"@
-  Add-Content $configFile $loggingConfig
-  (Get-Content $configFile) -replace "flush_interval 5s","flush_interval 60s" | out-file -encoding ASCII $configFile
-
-  Start-Sleep -s 30
-
-  net stop fluentdwinsvc
-  net start fluentdwinsvc
 }
 
 # Install NVIDIA driver (Tesla P100).
 $nvidiaDriverVersion = "391.29"
 $fileName = "$tmp\$nvidiaDriverVersion-tesla-desktop-winserver2016-international.exe"
 if ($gpu -and !(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/$nvidiaDriverVersion-tesla-desktop-winserver2016-international.exe", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/$nvidiaDriverVersion-tesla-desktop-winserver2016-international.exe", $fileName)
 
   # Unpack files by running installer, then run setup.exe from extracted path.
   cmd /c $fileName -s
@@ -231,7 +225,7 @@ if ($gpu -and !(Test-Path ($fileName))) {
 $nvidiaGridDriverVersion = "386.09"
 $fileName = "$tmp\${nvidiaGridDriverVersion}_grid_win10_server2016_64bit_international.exe"
 if ($gpu -and !(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/${nvidiaGridDriverVersion}_grid_win10_server2016_64bit_international.exe", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/${nvidiaGridDriverVersion}_grid_win10_server2016_64bit_international.exe", $fileName)
 
   # Unpack files by running installer, then run setup.exe from extracted path.
   cmd /c $fileName -s
@@ -247,7 +241,7 @@ cmd /c w32tm /resync
 # Setup OpenSSH
 $fileName = "$tmp\OpenSSH-Win64.zip"
 if (!(Test-Path ($fileName))) {
-  $webclient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/OpenSSH-Win64.zip", $fileName)
+  $webClient.DownloadFile("https://commondatastorage.googleapis.com/clusterfuzz-data/OpenSSH-Win64.zip", $fileName)
   unzip $fileName 'c:\Program Files'
   # OpenSSH needs to be in c:\Program Files\OpenSSH because its default
   # sshd_config expects that folder.
@@ -259,6 +253,9 @@ if (!(Test-Path ($fileName))) {
   cmd /c sc failure "sshd"  actions= restart/60000/restart/60000/restart/60000 reset= 86400
   net start sshd
 }
+
+# Enable health check port.
+netsh advfirewall firewall add rule name="Health check" dir=in action=allow protocol=TCP localport=7123
 
 # Update root certs. certutil called twice due to being crashy on first call.
 certutil -generateSSTFromWU roots.sst
@@ -273,33 +270,47 @@ rm "C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\sym" -Recurse -Force
 $deploymentBucket = $webClient.DownloadString('http://metadata.google.internal/computeMetadata/v1/project/attributes/deployment-bucket')
 
 # Download ClusterFuzz source.
+Write-Host "Downloading ClusterFuzz source code."
 rm c:\clusterfuzz -Recurse -Force
 $fileName = "$tmp\clusterfuzz.zip"
-gsutil cp gs://$deploymentBucket/windows.zip $fileName
+if ($env:USE_GCLOUD_STORAGE_CP -eq "1") {
+  gcloud storage cp gs://$deploymentBucket/windows-3.zip $fileName
+} else {
+  gsutil cp gs://$deploymentBucket/windows-3.zip $fileName
+}
 unzip $fileName
 
 # Resize partition to max available size.
 $MaxSize = (Get-PartitionSupportedSize -DriveLetter c).sizeMax
 Resize-Partition -DriveLetter c -Size $MaxSize
 
-Set-Content $scriptExecutedFilePath "done"
+Set-Content $packageSetupFilePath " "
 
 # Run autologin so that the hostname changes at reboot.
 c:\autologin.bat
 
-Write-Host "Restart"
+Write-Host "Restarting"
 
 Restart-Computer -Force
 exit
 
-} # !(Test-Path ($scriptExecutedFilePath))
+} # !(Test-Path ($packageSetupFilePath))
 
-Set-Content $scriptExecutedFilePath "skipped"
+Set-Content $packageSetupFilePath "Skipped package install"
 
 # Schedule chkdsk on every reboot.
 echo y | chkdsk C: /F /I /C
 
+# Install Pipfile dependencies
+$env:Path += ";c:\python311;c:\python311\scripts"
+cd c:\clusterfuzz
+cmd /c c:\python311\scripts\pipenv install --deploy --system
+
+# Can't be managed by pipenv due to https://github.com/pypa/pipenv/issues/3193.
+cmd /c c:\python311\python -m pip install pywinauto==0.6.8
+
 # Run the scripts.
+Write-Host "Run scripts"
 c:\autologin.bat
 c:\PsExec.exe \\$hostName -accepteula -h -i 0 -username `""$domain\$username"`" -password `""$password"`" c:\startup.bat
 

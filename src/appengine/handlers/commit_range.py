@@ -15,7 +15,9 @@
 
 import json
 
-from google_cloud_utils import big_query
+from flask import request
+
+from clusterfuzz._internal.google_cloud_utils import big_query
 from handlers import base_handler
 from libs import crash_access
 from libs import filters
@@ -64,7 +66,7 @@ class RevisionFilter(filters.Filter):
   def add(self, query, params):
     """Set query according to revision and type params."""
     if not params.get('revision'):
-      raise helpers.EarlyExitException('Please specify the revision.', 400)
+      raise helpers.EarlyExitError('Please specify the revision.', 400)
 
     prefix = params['type']
     revision = helpers.cast(params['revision'], int,
@@ -110,7 +112,7 @@ class TypeFilter(filters.Filter):
     value = params.get('type', 'regression')
 
     if value not in ['fixed', 'regression']:
-      raise helpers.EarlyExitException(
+      raise helpers.EarlyExitError(
           "'type' can only be either 'fixed' or 'regression'.", 400)
 
 
@@ -135,12 +137,11 @@ def get(params, query, offset, limit):
   return result.rows, result.total_count
 
 
-def get_result(this):
+def get_result():
   """Get the result for the crash stats page."""
-  params = {k: v for k, v in this.request.iterparams()}
+  params = dict(request.iterparams())
   params['type'] = params.get('type', 'regression')
-  page = helpers.cast(
-      this.request.get('page') or 1, int, "'page' is not an int.")
+  page = helpers.cast(request.get('page') or 1, int, "'page' is not an int.")
 
   is_revision_empty = 'revision' not in params
 
@@ -161,7 +162,7 @@ def get_result(this):
     helpers.log('Regression', helpers.VIEW_OPERATION)
 
   result = {
-      'totalPages': int(total_count / PAGE_SIZE) + 1,
+      'totalPages': (total_count // PAGE_SIZE) + 1,
       'page': page,
       'pageSize': PAGE_SIZE,
       'items': rows,
@@ -174,27 +175,32 @@ def get_result(this):
 class Handler(base_handler.Handler):
   """Handler that lists testcases whose regression range contains a revision."""
 
-  @handler.get(handler.HTML)
   @handler.unsupported_on_local_server
+  @handler.get(handler.HTML)
+  @handler.oauth
   def get(self):
     """Get and render the commit range in HTML."""
-    result, params = get_result(self)
-    self.render('commit_range.html', {'result': result, 'params': params})
+    result, params = get_result()
+    return self.render('commit_range.html', {
+        'result': result,
+        'params': params
+    })
 
 
 class JsonHandler(base_handler.Handler):
   """JSON handler used for dynamic updates of commit ranges."""
 
   # See: https://bugs.chromium.org/p/chromium/issues/detail?id=760669
+  @handler.post(handler.JSON, handler.JSON)
   @handler.oauth
   @handler.allowed_cors
-  @handler.post(handler.JSON, handler.JSON)
   def post(self):
     """Get and render the commit range in JSON."""
-    result, params = get_result(self)
+    result, params = get_result()
     result['params'] = params
-    self.render_json(result)
+    return self.render_json(result)
 
   @handler.allowed_cors
   def options(self):
     """Responds with CORS headers."""
+    return ''

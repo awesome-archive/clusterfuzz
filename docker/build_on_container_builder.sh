@@ -14,6 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# Change to this directory (docker), so as to use the correct cloudbuild.yaml.
+cd "$(dirname "${0}")"
+
 git fetch
 git_diff=$(git diff origin/master --stat)
 if [[ -n "$git_diff" ]]; then
@@ -21,4 +24,5 @@ if [[ -n "$git_diff" ]]; then
   exit 1
 fi
 
+cp ../Pipfile* base/
 gcloud builds submit . --project=clusterfuzz-images --substitutions=_GIT_HASH=$(git rev-parse HEAD | head -c7)

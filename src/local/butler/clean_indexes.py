@@ -17,7 +17,7 @@ import os
 import sys
 
 from local.butler import common
-from src.python.config import local_config
+from src.clusterfuzz._internal.config import local_config
 
 INDEX_FILE_PATH = 'src/appengine/index.yaml'
 
@@ -32,7 +32,7 @@ def _cleanup_indexes(project, index_yaml_path):
 def execute(args):
   """Clean indexes."""
   if not os.path.exists(args.config_dir):
-    print 'Please provide a valid configuration directory.'
+    print('Please provide a valid configuration directory.')
     sys.exit(1)
   os.environ['CONFIG_DIR_OVERRIDE'] = args.config_dir
 

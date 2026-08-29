@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Handler for removing duplicate_of of a testcase."""
+
+from flask import request
+
 from handlers import base_handler
 from handlers.testcase_detail import show
 from libs import handler
@@ -36,7 +39,7 @@ class Handler(base_handler.Handler):
   @handler.check_admin_access
   def post(self):
     """Remove duplicate status from a test case."""
-    testcase_id = self.request.get('testcaseId')
+    testcase_id = request.get('testcaseId')
     testcase = helpers.get_testcase(testcase_id)
     remove(testcase)
-    self.render_json(show.get_testcase_detail(testcase))
+    return self.render_json(show.get_testcase_detail(testcase))

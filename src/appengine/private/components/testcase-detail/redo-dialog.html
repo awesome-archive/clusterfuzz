@@ -1,5 +1,5 @@
 <!--
-  Copyright 2018 Google LLC
+  Copyright 2019 Google LLC
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@
         <paper-checkbox class="blame-checkbox" checked="{{blame}}" title="Find who introduced bug">Find culprit changelist and author</paper-checkbox>
       </template>
       <template is="dom-if" if="[[info.show_impact]]">
-        <paper-checkbox class="impact-checkbox" checked="{{impact}}" title="Calculate whether bug affects stable and beta">Calculate impact on production builds</paper-checkbox>
+        <paper-checkbox class="impact-checkbox" checked="{{impact}}" title="Calculate whether bug affects extended stable, stable and beta">Calculate impact on production builds</paper-checkbox>
       </template>
       <paper-checkbox class="progression-checkbox" checked="{{progression}}" title="Check if bug reproduces on trunk and if not, provide a revision range where it got fixed">Check if bug still reproduces</paper-checkbox>
     </ajax-dialog>

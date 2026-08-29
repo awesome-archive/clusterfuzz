@@ -1,5 +1,5 @@
 <!--
-  Copyright 2018 Google LLC
+  Copyright 2019 Google LLC
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -37,13 +37,8 @@
 {% block content %}
   <dom-bind id="page">
     <template>
-      <template is="dom-if" if="[[info]]">
-        <fuzzer-stats info="[[info]]" prefix="/fuzzer-stats"></fuzzer-stats>
-      </template>
+      <fuzzer-stats prefix="/fuzzer-stats"></fuzzer-stats>
     </template>
   </dom-bind>
-  <script>
-    document.querySelector('#page').info = JSON.parse(atob('{{info|json}}'));
-  </script>
 {% endblock %}
 

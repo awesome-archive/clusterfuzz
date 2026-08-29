@@ -14,15 +14,15 @@
 """Install all required dependencies for running an appengine, a bot, and a
   mapreduce locally."""
 
-from __future__ import print_function
-
 from local.butler import appengine
 from local.butler import common
 
 
-def execute(_):
+def execute(args):
   """Install all required dependencies for running tests, the appengine,
     and the bot."""
+  del args
   common.install_dependencies()
   appengine.symlink_dirs()
+
   print('Bootstrap successfully finished.')

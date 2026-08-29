@@ -13,39 +13,21 @@
 # limitations under the License.
 """guard.py checks virtualenv environment and dev requirements."""
 import os
-import subprocess
+import sys
 
 
 def check_virtualenv():
-  root_path = os.path.realpath(
-      os.path.join(os.path.dirname(__file__), '..', '..', '..'))
-  is_in_virtualenv = os.getenv('VIRTUAL_ENV') == os.path.join(root_path, 'ENV')
+  """Check that we're in a virtualenv."""
+  if sys.version_info.major != 3:
+    raise RuntimeError('Python 2 is no longer supported!')
+
+  is_in_virtualenv = bool(os.getenv('VIRTUAL_ENV'))
 
   if not is_in_virtualenv:
-    raise Exception(
+    raise RuntimeError(
         'You are not in a virtual env environment. Please install it with'
         ' `./local/install_deps.bash` or load it with'
-        ' `source ENV/bin/activate`. Then, you can re-run this command.')
-
-
-def check_dev_requirements():
-  """Check that dev requirements are installed."""
-  freeze_output = subprocess.check_output('pip freeze', shell=True)
-  installed_pips = freeze_output.strip().splitlines()
-
-  with open('src/local/requirements.txt', 'r') as f:
-    required_pips = f.read().strip().splitlines()
-
-  with open('docker/ci/requirements.txt', 'r') as f:
-    required_pips.extend(f.read().strip().splitlines())
-
-  for pip in required_pips:
-    if pip not in installed_pips:
-      raise Exception(
-          '%s is not installed as required by `src/local/requirements.txt`.'
-          ' Please run `pip install -U -r src/local/requirements.txt` and '
-          '`pip install -U -r docker/ci/requirements.txt` to get %s' % (pip,
-                                                                        pip))
+        ' `pipenv shell`. Then, you can re-run this command.')
 
 
 def check():
@@ -55,4 +37,3 @@ def check():
     return
 
   check_virtualenv()
-  check_dev_requirements()

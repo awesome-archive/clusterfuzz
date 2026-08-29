@@ -12,6 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Handler for creating issue."""
+
+from flask import request
+
 from handlers import base_handler
 from libs import handler
 from libs import helpers
@@ -27,7 +30,7 @@ class Handler(base_handler.Handler):
 
     # Don't delete testcases that have an associated issue.
     if testcase.bug_information:
-      raise helpers.EarlyExitException(
+      raise helpers.EarlyExitError(
           'The testcase (id=%d) with an assigned issue cannot be deleted.' %
           testcase_id, 400)
 
@@ -39,5 +42,5 @@ class Handler(base_handler.Handler):
   @handler.check_admin_access
   def post(self):
     """Delete a testcase."""
-    testcase_id = self.request.get('testcaseId')
-    self.render_json({'testcaseId': self.delete_testcase(testcase_id)})
+    testcase_id = request.get('testcaseId')
+    return self.render_json({'testcaseId': self.delete_testcase(testcase_id)})

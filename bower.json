@@ -26,6 +26,7 @@
     "paper-checkbox": "PolymerElements/paper-checkbox#^2.0.0",
     "paper-date-picker": "polymer-paper-date-picker#^2.0.0",
     "paper-dialog": "PolymerElements/paper-dialog#^2.0.0",
+    "paper-dialog-scrollable": "PolymerElements/paper-dialog-scrollable#^2.0.0",
     "paper-drawer-panel": "PolymerElements/paper-drawer-panel#^2.0.0",
     "paper-dropdown-menu": "PolymerElements/paper-dropdown-menu#^2.0.0",
     "paper-header-panel": "PolymerElements/paper-header-panel#^2.0.0",
@@ -40,8 +41,8 @@
     "paper-toolbar": "PolymerElements/paper-toolbar#^2.0.0",
     "paper-tooltip": "PolymerElements/paper-tooltip#^2.0.0",
     "polymer": "Polymer/polymer#^2.1.0",
-    "test-fixture": "PolymerElements/test-fixture#^2.0.0",
-    "web-component-tester": "Polymer/web-component-tester#^6.0.0",
+    "test-fixture": "PolymerElements/test-fixture#^3.0.0",
+    "web-component-tester": "Polymer/web-component-tester#^6.5.1",
     "shadycss": "^1.0.6"
   },
   "resolutions": {

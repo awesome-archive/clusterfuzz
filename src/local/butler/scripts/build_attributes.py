@@ -16,9 +16,9 @@
 import datetime
 import sys
 
-from base import utils
-from datastore import data_types
-from datastore import ndb
+from clusterfuzz._internal.base import utils
+from clusterfuzz._internal.datastore import data_types
+from clusterfuzz._internal.datastore import ndb_utils
 from local.butler.scripts import attribute_builder
 from local.butler.scripts import batcher
 
@@ -30,7 +30,7 @@ def to_dict(entity):
   entity_dict = entity.to_dict()
   entity_dict['id'] = entity.key.id()
 
-  for k, v in entity_dict.iteritems():
+  for k, v in entity_dict.items():
     if isinstance(v, datetime.datetime):
       entity_dict[k] = utils.utc_datetime_to_timestamp(v)
 
@@ -40,14 +40,14 @@ def to_dict(entity):
 def get_diff(before, after):
   """Return differences in string between the two dicts, before and after."""
   diffs = []
-  for k, v in before.iteritems():
+  for k, v in before.items():
     if k in after:
       if v != after[k]:
         diffs.append((k, (v, after[k])))
     else:
       diffs.append((k, (v, '<MISSING>')))
 
-  for k, v in after.iteritems():
+  for k, v in after.items():
     if k not in before:
       diffs.append((k, ('<MISSING>', v)))
 
@@ -75,20 +75,20 @@ def execute(args):
 
       diff = get_diff(before_testcase, after_testcase)
       if (count_diff % 10) == 0 and diff:
-        print 'Migrate (dry=%s) id:%s\n%s' % (not args.non_dry_run,
-                                              testcase.key.id(), diff)
+        print('Migrate (dry=%s) id:%s\n%s' % (not args.non_dry_run,
+                                              testcase.key.id(), diff))
 
       if diff:
         count_diff += 1
 
     if args.non_dry_run:
       try:
-        ndb.put_multi(testcases)
+        ndb_utils.put_multi(testcases)
       except Exception:
         for testcase in testcases:
           try:
             testcase.put()
           except Exception:
-            print 'Error: %s %s' % (testcase.key.id(), sys.exc_info())
+            print('Error: %s %s' % (testcase.key.id(), sys.exc_info()))
 
-  print 'Done (count_diff=%d)' % count_diff
+  print('Done (count_diff=%d)' % count_diff)

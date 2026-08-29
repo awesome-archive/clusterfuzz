@@ -13,9 +13,8 @@
 # limitations under the License.
 """Help."""
 
-from config import db_config
+from clusterfuzz._internal.config import db_config
 from handlers import base_handler
-from libs import helpers
 
 DEFAULT_DOCUMENTATION_URL = 'https://google.github.io/clusterfuzz/'
 DEFAULT_BUG_REPORT_URL = 'https://github.com/google/clusterfuzz/issues'
@@ -30,7 +29,7 @@ class DocumentationHandler(base_handler.Handler):
     if not documentation_url:
       documentation_url = DEFAULT_DOCUMENTATION_URL
 
-    self.redirect(documentation_url)
+    return self.redirect(documentation_url)
 
 
 class ReportBugHandler(base_handler.Handler):
@@ -42,4 +41,4 @@ class ReportBugHandler(base_handler.Handler):
     if not bug_report_url:
       bug_report_url = DEFAULT_BUG_REPORT_URL
 
-    self.redirect(bug_report_url)
+    return self.redirect(bug_report_url)

@@ -13,8 +13,10 @@
 # limitations under the License.
 """Content viewer."""
 
-from base import utils
-from google_cloud_utils import blobs
+from flask import request
+
+from clusterfuzz._internal.base import utils
+from clusterfuzz._internal.google_cloud_utils import blobs
 from handlers import base_handler
 from libs import access
 from libs import handler
@@ -29,33 +31,40 @@ class Handler(base_handler.Handler):
   @handler.get(handler.HTML)
   def get(self):
     """Get the HTML page."""
-    key = self.request.get('key')
+    key = request.get('key')
     if not key:
-      raise helpers.EarlyExitException('No key provided.', 400)
+      raise helpers.EarlyExitError('No key provided.', 400)
 
-    testcase_id = self.request.get('testcase_id')
+    testcase_id = request.get('testcase_id')
     if testcase_id:
       testcase = helpers.get_testcase(testcase_id)
       if not access.can_user_access_testcase(testcase):
-        raise helpers.AccessDeniedException()
+        raise helpers.AccessDeniedError()
 
       if key not in [testcase.fuzzed_keys, testcase.minimized_keys]:
-        raise helpers.AccessDeniedException()
+        raise helpers.AccessDeniedError()
     else:
       if not access.has_access():
-        raise helpers.AccessDeniedException()
+        raise helpers.AccessDeniedError()
 
-    if blobs.get_blob_size(key) > MAX_ALLOWED_CONTENT_SIZE:
-      raise helpers.EarlyExitException('Content exceeds max allowed size.', 400)
+    blob_size = blobs.get_blob_size(key)
+    if blob_size:
+      if blob_size > MAX_ALLOWED_CONTENT_SIZE:
+        raise helpers.EarlyExitError('Content exceeds max allowed size.', 400)
 
-    try:
-      content = unicode(blobs.read_key(key), errors='replace')
-    except Exception:
-      raise helpers.EarlyExitException('Failed to read content.', 400)
+    # TODO(mbarbella): Workaround for an issue in the Cloud Storage API. Remove
+    # once it is fixed properly upstream:
+    # https://github.com/googleapis/google-cloud-python/issues/6572
+      try:
+        content = blobs.read_key(key).decode('utf-8', errors='replace')
+      except Exception:
+        raise helpers.EarlyExitError('Failed to read content.', 400)
+    else:
+      content = ''
 
     line_count = len(content.splitlines())
     size = len(content)
     title = '%s, %s' % (utils.get_line_count_string(line_count),
                         utils.get_size_string(size))
 
-    self.render('viewer.html', {'content': content, 'title': title})
+    return self.render('viewer.html', {'content': content, 'title': title})

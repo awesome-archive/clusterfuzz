@@ -15,13 +15,24 @@
 
 import datetime
 
-from base import tasks
-from base import utils
-from datastore import data_types
-from datastore import ndb_utils
+from flask import request
+
+from clusterfuzz._internal.base import tasks
+from clusterfuzz._internal.base import utils
+from clusterfuzz._internal.datastore import data_types
+from clusterfuzz._internal.datastore import ndb_utils
 from handlers import base_handler
+from libs import filters
 from libs import handler
 from libs import helpers
+from libs.query import datastore_query
+
+PAGE_SIZE = 10
+MORE_LIMIT = 50 - PAGE_SIZE  # exactly 5 pages
+
+FILTERS = [
+    filters.Keyword([], 'keywords', 'q'),
+]
 
 
 def _get_alive_cutoff():
@@ -46,6 +57,8 @@ def _convert_heartbeats_to_dicts(heartbeats):
             heartbeat.source_version,
         'task_payload':
             heartbeat.task_payload,
+        'platform_id':
+            heartbeat.platform_id,
         'task_end_time':
             utils.utc_datetime_to_timestamp(heartbeat.task_end_time)
             if heartbeat.task_end_time else '',
@@ -59,50 +72,57 @@ def _convert_heartbeats_to_dicts(heartbeats):
   return result
 
 
-def _get_host_workers_heartbeats():
-  """Return host worker heartbeats."""
-  page_size = 30
+def get_results():
+  """Get results for the bots page."""
+  # Return bots sorted alphabetically by bot_name
+  query = datastore_query.Query(data_types.Heartbeat)
+  query.order('bot_name', is_desc=False)
+  params = dict(request.iterparams())
+  filters.add(query, params, FILTERS)
 
-  query = data_types.HostWorkerAssignment.query()
-  cursor = None
+  page = helpers.cast(request.get('page', 1), int, "'page' is not an int.")
+  items, total_pages, total_items, has_more = query.fetch_page(
+      page=page, page_size=PAGE_SIZE, projection=None, more_limit=MORE_LIMIT)
+  items = _convert_heartbeats_to_dicts(items)
+  helpers.log('Bots', helpers.VIEW_OPERATION)
 
-  while True:
-    results, cursor, more = query.fetch_page(
-        page_size, batch_size=page_size, start_cursor=cursor)
-    key_ids = [assignment.key.id() for assignment in results]
-    if not key_ids:
-      break
-
-    worker_mapping = dict(
-        (assignment.key.id(), assignment.worker_name) for assignment in results)
-
-    for heartbeat in data_types.Heartbeat.query(
-        data_types.Heartbeat.bot_name.IN(key_ids)):
-      heartbeat.bot_name = '{host_name} ({worker_name})'.format(
-          host_name=heartbeat.bot_name,
-          worker_name=worker_mapping[heartbeat.bot_name])
-      yield heartbeat
-
-    if not more:
-      break
+  result = {
+      'hasMore': has_more,
+      'items': items,
+      'page': page,
+      'pageSize': PAGE_SIZE,
+      'totalItems': total_items,
+      'totalPages': total_pages,
+  }
+  return result, params
 
 
 class Handler(base_handler.Handler):
   """Handler that gets the bot list."""
 
-  @handler.check_user_access(need_privileged_access=False)
   @handler.get(handler.HTML)
+  @handler.oauth
+  @handler.check_admin_access_if_oss_fuzz
+  @handler.check_user_access(need_privileged_access=False)
   def get(self):
     """Render the bot list HTML."""
-    if utils.is_oss_fuzz():
-      heartbeats = _get_host_workers_heartbeats()
-    else:
-      heartbeats = ndb_utils.get_all_from_model(data_types.Heartbeat)
-
-    bots = _convert_heartbeats_to_dicts(heartbeats)
-    self.render('bots.html', {
-        'bots': bots,
+    result, params = get_results()
+    return self.render('bots.html', {
+        'result': result,
+        'params': params,
     })
+
+
+class JsonHandler(base_handler.Handler):
+  """Handler that gets the bots when user clicks on next page."""
+
+  @handler.post(handler.JSON, handler.JSON)
+  @handler.check_admin_access_if_oss_fuzz
+  @handler.check_user_access(need_privileged_access=False)
+  def post(self):
+    """Get and render the bots in JSON."""
+    result, _ = get_results()
+    return self.render_json(result)
 
 
 class DeadBotsHandler(base_handler.Handler):
@@ -116,7 +136,7 @@ class DeadBotsHandler(base_handler.Handler):
     if utils.is_chromium():
       heartbeats = ndb_utils.get_all_from_model(data_types.Heartbeat)
     else:
-      raise helpers.EarlyExitException('Dead bots list unavailable.', 400)
+      raise helpers.EarlyExitError('Dead bots list unavailable.', 400)
 
     result = {}
     alive_cutoff = _get_alive_cutoff()
@@ -124,4 +144,4 @@ class DeadBotsHandler(base_handler.Handler):
       if heartbeat.last_beat_time <= alive_cutoff:
         result[heartbeat.bot_name] = 'dead'
 
-    self.render_json(result)
+    return self.render_json(result)

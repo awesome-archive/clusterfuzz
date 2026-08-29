@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Handler for creating issue."""
+
+from flask import request
+
+from clusterfuzz._internal.issue_management import issue_filer
+from clusterfuzz._internal.metrics import events
 from handlers import base_handler
 from handlers.testcase_detail import show
-from issue_management import issue_filer
 from libs import handler
 from libs import helpers
 
@@ -25,7 +29,7 @@ class Handler(base_handler.Handler):
   @staticmethod
   def create_issue(testcase, severity, cc_me):
     """Create an issue."""
-    itm = helpers.get_issue_tracker_manager(testcase)
+    issue_tracker = helpers.get_issue_tracker_for_testcase(testcase)
     user_email = helpers.get_user_email()
 
     if severity is not None:
@@ -33,26 +37,34 @@ class Handler(base_handler.Handler):
           severity, int, 'Invalid value for security severity (%s).' % severity)
 
     additional_ccs = []
-    if cc_me == 'true':
+    if cc_me:
       additional_ccs.append(user_email)
 
-    issue_id = issue_filer.file_issue(
+    issue_id, _ = issue_filer.file_issue(
         testcase,
-        itm,
+        issue_tracker,
         security_severity=severity,
         user_email=user_email,
         additional_ccs=additional_ccs)
 
+    events.emit(
+        events.IssueFilingEvent(
+            testcase=testcase,
+            issue_tracker_project=issue_tracker.project,
+            issue_id=str(issue_id) if issue_id else None,
+            issue_created=bool(issue_id),
+            issue_reporter=user_email))
+
     if not issue_id:
-      raise helpers.EarlyExitException('Unable to create new issue.', 500)
+      raise helpers.EarlyExitError('Unable to create new issue.', 500)
 
   @handler.post(handler.JSON, handler.JSON)
   @handler.require_csrf_token
   @handler.check_testcase_access
   def post(self, testcase):
     """Create an issue."""
-    cc_me = self.request.get('ccMe')
-    severity = self.request.get('severity')
+    cc_me = request.get('ccMe')
+    severity = request.get('severity')
 
     self.create_issue(testcase, severity, cc_me)
-    self.render_json(show.get_testcase_detail(testcase))
+    return self.render_json(show.get_testcase_detail(testcase))

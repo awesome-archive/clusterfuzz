@@ -101,9 +101,10 @@ clusterfuzz-linux-pre:
   distribute: False
 ```
 
-You can modify the number of bots by first uncommenting the cluster definition,
-and then changing the value in the `instance_count` attribute. You can also
-create your own [instance template](#google-compute-engine-instance-template)
+You can configure the bots by first uncommenting the cluster definition,
+and then changing the values in the `gce_zone` (e.g. `us-central1-a`) and
+`instance_count` attributes. You can also create your own
+[instance template](#google-compute-engine-instance-template)
 and then define a new cluster section here.
 
 **Note**:
@@ -135,7 +136,7 @@ instance_templates:
       metadata:
         items:
           - key: docker-image
-            value: gcr.io/clusterfuzz-images/base:3c30284-201902062210
+            value: gcr.io/clusterfuzz-images/base:c44bf3f-201902112042
           - key: user-data
             value: file://linux-init.yaml
       serviceAccounts:
@@ -183,13 +184,9 @@ to deploy new changes.
 
 ### Google Compute Engine bots
 
-Once deployed, bots are automatically created via an App Engine cron task that
-runs every *30 minutes*. For faster results, you can manually force it by
-visiting the `Cron jobs` page
-[here](https://console.cloud.google.com/appengine/cronjobs) and running the
-`/manage-vms` cron job.
+ClusterFuzz bots must be created (preferably by Terraform) following the configurations in configs/test/gce/clusters.yaml.
 
-After the cron job finishes, check this
+After creation or update finishes, check
 [page](https://console.cloud.google.com/compute/instanceGroups/list) to ensure
 that all instances are created for this particular
 [instance group](#google-compute-engine-cluster).
@@ -216,7 +213,7 @@ the *Bots* page.
 [deploy]: #deploying-new-changes
 [fuzzing engine]: {{ site.baseurl }}/reference/glossary/#fuzzing-engine
 [job]: {{ site.baseurl }}/reference/glossary/#job-type
-[preemptible]: {{ site.baseurl }}/architecture/#bots
+[preemptible]: {{ site.baseurl }}/architecture/#fuzzing-bots
 [sanitizer]: {{ site.baseurl }}/reference/glossary/#sanitizer
 [AddressSanitizer]: https://clang.llvm.org/docs/AddressSanitizer.html
 [LeakSanitizer]: https://clang.llvm.org/docs/LeakSanitizer.html

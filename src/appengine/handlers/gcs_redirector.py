@@ -13,7 +13,9 @@
 # limitations under the License.
 """GCS redirector."""
 
-from google_cloud_utils import storage
+from flask import request
+
+from clusterfuzz._internal.google_cloud_utils import storage
 from handlers import base_handler
 from libs import handler
 from libs import helpers
@@ -25,9 +27,9 @@ class Handler(base_handler.Handler):
   @handler.get(handler.HTML)
   def get(self):
     """Handle a get request."""
-    gcs_path = self.request.get('path', '')
+    gcs_path = request.args.get('path', '')
     if not gcs_path:
-      raise helpers.EarlyExitException('No path provided.', 400)
+      raise helpers.EarlyExitError('No path provided.', 400)
 
     if storage.get(gcs_path):
       host_url = storage.OBJECT_URL
@@ -35,4 +37,4 @@ class Handler(base_handler.Handler):
       host_url = storage.DIRECTORY_URL
 
     bucket_name, object_path = storage.get_bucket_name_and_path(gcs_path)
-    self.redirect(host_url + '/' + bucket_name + '/' + object_path)
+    return self.redirect(host_url + '/' + bucket_name + '/' + object_path)

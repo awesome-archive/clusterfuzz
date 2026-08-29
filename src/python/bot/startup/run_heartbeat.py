@@ -13,26 +13,24 @@
 # limitations under the License.
 """Heartbeat script wrapper."""
 
-# We want to use utf-8 encoding everywhere throughout the application
-# instead of the default 'ascii' encoding. This must happen before any
-# other imports.
-import sys
-reload(sys)
-sys.setdefaultencoding('utf-8')
-
 # Before any other imports, we must fix the path. Some libraries might expect
 # to be able to import dependencies directly, but we must store these in
 # subdirectories of common so that they are shared with App Engine.
-from python.base import modules
+from clusterfuzz._internal.base import modules
+
 modules.fix_module_search_paths()
 
 import os
 import subprocess
+import sys
 
-from datastore import data_handler
-from metrics import logs
-from system import environment
-from system import shell
+from clusterfuzz._internal.datastore import data_handler
+from clusterfuzz._internal.datastore import ndb_init
+from clusterfuzz._internal.metrics import logs
+from clusterfuzz._internal.system import environment
+from clusterfuzz._internal.system import shell
+from python.bot.startup.health_check_responder import \
+    run_server as run_health_responser_server
 
 BEAT_SCRIPT = 'heartbeat.py'
 
@@ -40,7 +38,7 @@ BEAT_SCRIPT = 'heartbeat.py'
 def main():
   """Update the heartbeat if there is bot activity."""
   if len(sys.argv) < 2:
-    print 'Usage: %s <log file>' % sys.argv[0]
+    print('Usage: %s <log file>' % sys.argv[0])
     return
 
   environment.set_bot_environment()
@@ -52,7 +50,10 @@ def main():
   # Get absolute path to heartbeat script and interpreter needed to execute it.
   startup_scripts_directory = environment.get_startup_scripts_directory()
   beat_script_path = os.path.join(startup_scripts_directory, BEAT_SCRIPT)
-  beat_interpreter = shell.get_interpreter_for_command(beat_script_path)
+  beat_interpreter = shell.get_interpreter(beat_script_path)
+  assert beat_interpreter
+
+  run_health_responser_server()
 
   while True:
     beat_command = [
@@ -64,9 +65,9 @@ def main():
       previous_state = subprocess.check_output(
           beat_command, stderr=subprocess.STDOUT)
     except subprocess.CalledProcessError as e:
-      logs.log_error('Failed to beat.', output=e.output)
+      logs.error('Failed to beat.', output=e.output)
     except Exception:
-      logs.log_error('Failed to beat.')
+      logs.error('Failed to beat.')
 
     # See if our run timed out, if yes bail out.
     if data_handler.bot_run_timed_out():
@@ -74,4 +75,5 @@ def main():
 
 
 if __name__ == '__main__':
-  main()
+  with ndb_init.context():
+    main()

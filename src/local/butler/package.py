@@ -15,19 +15,21 @@
 
 import os
 import re
+import shutil
 import sys
 import zipfile
 
 from local.butler import appengine
 from local.butler import common
 from local.butler import constants
+from src.clusterfuzz._internal.base import utils
 
 MIN_SUPPORTED_NODEJS_VERSION = 4
 
 
-def _clear_zip(target_zip_path):
+def _clear_zip(target_zip_path, clear_manifest=True):
   """Remove zip and manifest file."""
-  if os.path.exists(constants.PACKAGE_TARGET_MANIFEST_PATH):
+  if clear_manifest and os.path.exists(constants.PACKAGE_TARGET_MANIFEST_PATH):
     os.remove(constants.PACKAGE_TARGET_MANIFEST_PATH)
 
   if os.path.exists(target_zip_path):
@@ -48,7 +50,7 @@ def _is_nodejs_up_to_date():
   if return_code != 0:
     return False
 
-  m = re.match(r'v([0-9]+)\..+', output.strip())
+  m = re.match(br'v([0-9]+)\..+', output.strip())
 
   if not m:
     return False
@@ -70,15 +72,16 @@ def _get_files(path):
 def package(revision,
             target_zip_dir=constants.PACKAGE_TARGET_ZIP_DIRECTORY,
             target_manifest_path=constants.PACKAGE_TARGET_MANIFEST_PATH,
-            platform_name=None):
+            platform_name=None,
+            release='prod'):
   """Prepare clusterfuzz-source.zip."""
   is_ci = os.getenv('TEST_BOT_ENVIRONMENT')
   if not is_ci and common.is_git_dirty():
-    print 'Your branch is dirty. Please fix before packaging.'
+    print('Your branch is dirty. Please fix before packaging.')
     sys.exit(1)
 
   if not _is_nodejs_up_to_date():
-    print 'You do not have nodejs, or your nodejs is not at least version 4.'
+    print('You do not have nodejs, or your nodejs is not at least version 4.')
     sys.exit(1)
 
   common.install_dependencies(platform_name=platform_name)
@@ -88,38 +91,38 @@ def package(revision,
   appengine.symlink_dirs()
 
   _, ls_files_output = common.execute('git -C . ls-files', print_output=False)
-  file_paths = ls_files_output.splitlines()
+  file_paths = [path.decode('utf-8') for path in ls_files_output.splitlines()]
 
   if not os.path.exists(target_zip_dir):
     os.makedirs(target_zip_dir)
 
   target_zip_name = constants.LEGACY_ZIP_NAME
   if platform_name:
-    target_zip_name = platform_name + '.zip'
+    target_zip_name = utils.get_platform_deployment_filename(
+        platform_name, release)
 
   target_zip_path = os.path.join(target_zip_dir, target_zip_name)
   _clear_zip(target_zip_path)
 
-  output_file = zipfile.ZipFile(target_zip_path, 'w', zipfile.ZIP_DEFLATED)
+  with zipfile.ZipFile(target_zip_path, 'w',
+                       zipfile.ZIP_DEFLATED) as output_file:
+    # Add files from git.
+    for file_path in file_paths:
+      if (file_path.startswith('config') or file_path.startswith('local') or
+          file_path.startswith(os.path.join('src', 'appengine')) or
+          file_path.startswith(os.path.join('src', 'local')) or
+          file_path.startswith(
+              os.path.join('src', 'clusterfuzz', '_internal', 'tests'))):
+        continue
+      _add_to_zip(output_file, file_path)
 
-  # Add files from git.
-  for file_path in file_paths:
-    if (file_path.startswith('config') or file_path.startswith('local') or
-        file_path.startswith(os.path.join('src', 'appengine')) or
-        file_path.startswith(os.path.join('src', 'local')) or
-        file_path.startswith(os.path.join('src', 'python', 'tests'))):
-      continue
-    _add_to_zip(output_file, file_path)
+    # These are project configuration yamls.
+    for path in _get_files(os.path.join('src', 'appengine', 'config')):
+      _add_to_zip(output_file, path)
 
-  # These are project configuration yamls.
-  for path in _get_files(os.path.join('src', 'appengine', 'config')):
-    _add_to_zip(output_file, path)
-
-  # These are third party dependencies.
-  for path in _get_files(os.path.join('src', 'third_party')):
-    _add_to_zip(output_file, path)
-
-  output_file.close()
+    # These are third party dependencies.
+    for path in _get_files(os.path.join('src', 'third_party')):
+      _add_to_zip(output_file, path)
 
   with open(target_manifest_path, 'w') as f:
     f.write('%s\n' % revision)
@@ -127,19 +130,36 @@ def package(revision,
   with zipfile.ZipFile(target_zip_path, 'a', zipfile.ZIP_DEFLATED) as f:
     _add_to_zip(f, target_manifest_path, constants.PACKAGE_TARGET_MANIFEST_PATH)
 
-  print 'Revision: %s' % revision
+  print('Revision: %s' % revision)
 
-  print
-  print '%s is ready.' % target_zip_path
-  return target_zip_path
+  print()
+  print('%s is ready.' % target_zip_path)
+
+  targets_zip_paths = [target_zip_path]
+  if platform_name and release == 'prod':
+    # Copy prod package into additional releases.
+    for add_release in constants.ADDITIONAL_RELEASES:
+      add_target_zip_name = utils.get_platform_deployment_filename(
+          platform_name, release=add_release)
+      add_target_zip_path = os.path.join(target_zip_dir, add_target_zip_name)
+      _clear_zip(add_target_zip_path, clear_manifest=False)
+      shutil.copy2(target_zip_path, add_target_zip_path)
+      print('\n%s is ready.' % add_target_zip_path)
+      targets_zip_paths.append(add_target_zip_path)
+
+  return targets_zip_paths
 
 
 def execute(args):
+  """Execute the butler package command."""
   if args.platform == 'all':
-    for platform_name in constants.PLATFORMS.iterkeys():
+    for platform_name in list(constants.PLATFORMS.keys()):
       package(
           revision=common.compute_staging_revision(),
-          platform_name=platform_name)
+          platform_name=platform_name,
+          release=args.release)
   else:
     package(
-        revision=common.compute_staging_revision(), platform_name=args.platform)
+        revision=common.compute_staging_revision(),
+        platform_name=args.platform,
+        release=args.release)

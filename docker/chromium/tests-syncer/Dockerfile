@@ -13,18 +13,22 @@
 # limitations under the License.
 FROM gcr.io/clusterfuzz-images/base
 
-ENV RUN_CMD \
-    "python $ROOT_DIR/src/python/scripts/other-bots/chromium-tests-syncer/run.py"
+ENV RUN_CMD "python3.11 $ROOT_DIR/src/python/bot/startup/run_cron.py chrome_tests_syncer"
 ENV DISABLE_MOUNTS True
 ENV EXTRA_PATH "/data/depot_tools"
-ENV SYNC_INTERVAL 43200
 ENV TESTS_ARCHIVE_BUCKET "clusterfuzz-data"
 ENV TESTS_ARCHIVE_NAME "web_tests.zip"
 ENV TESTS_DIR /home/$USER/tests
 
+# Add git-core/ppa for latest git version. Otherwise, we fail on gclient sync.
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository -y ppa:git-core/ppa
+
 RUN apt-get update && \
     apt-get install -y \
         git \
+	python-is-python3 \
         subversion \
         zip
 

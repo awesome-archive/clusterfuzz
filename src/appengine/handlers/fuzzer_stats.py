@@ -13,27 +13,27 @@
 # limitations under the License.
 """Fuzzer statistics handler."""
 
-import cgi
 import datetime
+import html
 import re
-import urllib
+import urllib.parse
+
+from flask import request
+from googleapiclient.errors import HttpError
 import yaml
 
-from googleapiclient.errors import HttpError
-
-import base_handler
-
-from base import external_users
-from base import memoize
-from base import utils
-from datastore import data_handler
-from datastore import data_types
-from google_cloud_utils import big_query
+from clusterfuzz._internal.base import external_users
+from clusterfuzz._internal.base import memoize
+from clusterfuzz._internal.base import utils
+from clusterfuzz._internal.datastore import data_handler
+from clusterfuzz._internal.datastore import data_types
+from clusterfuzz._internal.google_cloud_utils import big_query
+from clusterfuzz._internal.metrics import fuzzer_stats
+from clusterfuzz._internal.metrics import logs
+from handlers import base_handler
 from libs import access
 from libs import handler
 from libs import helpers
-from metrics import fuzzer_stats
-from metrics import logs
 
 # Old fuzzer stats don't change, we could cache forever and it would never go
 # stale. Since stats can get pretty large and probably aren't used much the day
@@ -42,10 +42,10 @@ MEMCACHE_OLD_TTL_IN_SECONDS = 24 * 60 * 60
 
 # New fuzzer stats change, and aren't as likely to be reaccessed, don't cache
 # for very long.
-MEMCACHE_TODAY_TTL_IN_SECONDS = 15 * 60
+MEMCACHE_TODAY_TTL_IN_SECONDS = 30 * 60
 
 
-class QueryField(object):
+class QueryField:
   """Wrapped fuzzer_stats.QueryField with extra metadata."""
 
   def __init__(self, field, results_index, field_type, bigquery_type):
@@ -55,7 +55,7 @@ class QueryField(object):
     self.bigquery_type = bigquery_type.lower()
 
 
-class BuiltinField(object):
+class BuiltinField:
   """Wrapped fuzzer_stats.BuiltinField with extra metadata."""
 
   def __init__(self, spec, field):
@@ -66,7 +66,7 @@ class BuiltinField(object):
 def _bigquery_type_to_charts_type(typename):
   """Convert bigquery type to charts type."""
   typename = typename.lower()
-  if typename == 'integer' or typename == 'float':
+  if typename in ('integer', 'float'):
     return 'number'
 
   if typename == 'timestamp':
@@ -77,7 +77,7 @@ def _bigquery_type_to_charts_type(typename):
 
 def _python_type_to_charts_type(type_value):
   """Convert bigquery type to charts type."""
-  if type_value == int or type_value == float or type_value == float:
+  if type_value in (int, float):
     return 'number'
 
   if type_value == datetime.date:
@@ -143,13 +143,13 @@ def _parse_group_by(group_by):
   """Parse group_by value."""
   if group_by == 'by-day':
     return fuzzer_stats.QueryGroupBy.GROUP_BY_DAY
-  elif group_by == 'by-time':
+  if group_by == 'by-time':
     return fuzzer_stats.QueryGroupBy.GROUP_BY_TIME
-  elif group_by == 'by-revision':
+  if group_by == 'by-revision':
     return fuzzer_stats.QueryGroupBy.GROUP_BY_REVISION
-  elif group_by == 'by-job':
+  if group_by == 'by-job':
     return fuzzer_stats.QueryGroupBy.GROUP_BY_JOB
-  elif group_by == 'by-fuzzer':
+  if group_by == 'by-fuzzer':
     return fuzzer_stats.QueryGroupBy.GROUP_BY_FUZZER
 
   return None
@@ -166,16 +166,16 @@ def _get_fuzzer_or_engine(name):
 
 def _do_bigquery_query(query):
   """Return results from BigQuery."""
-  logs.log(query)
+  logs.info(query)
   client = big_query.Client()
 
   try:
     results = client.raw_query(query, max_results=10000)
   except HttpError as e:
-    raise helpers.EarlyExitException(str(e), 500)
+    raise helpers.EarlyExitError(str(e), 500)
 
   if 'rows' not in results:
-    raise helpers.EarlyExitException('No stats.', 404)
+    raise helpers.EarlyExitError('No stats.', 404)
 
   return results
 
@@ -187,12 +187,12 @@ def _parse_stats_column_descriptions(stats_column_descriptions):
 
   try:
     result = yaml.safe_load(stats_column_descriptions)
-    for key, value in result.iteritems():
-      result[key] = cgi.escape(value)
+    for key, value in result.items():
+      result[key] = html.escape(value)
 
     return result
   except yaml.parser.ParserError:
-    logs.log_error('Failed to parse stats column descriptions.')
+    logs.error('Failed to parse stats column descriptions.')
     return {}
 
 
@@ -280,12 +280,12 @@ def _build_rows(result, columns, rows, group_by):
 
 def _get_cloud_storage_link(bucket_path):
   """Return a clickable link to a cloud storage file given the bucket path."""
-  return '/gcs-redirect?' + urllib.urlencode({'path': bucket_path})
+  return '/gcs-redirect?' + urllib.parse.urlencode({'path': bucket_path})
 
 
 def _get_filter_from_job(job):
   """Creates a job filter from |job|."""
-  return [unicode(job)] if job else None
+  return [str(job)] if job else None
 
 
 def build_results(fuzzer, jobs, group_by, date_start, date_end):
@@ -293,28 +293,28 @@ def build_results(fuzzer, jobs, group_by, date_start, date_end):
   those wrappers to call based on how long query should be cached for."""
   datetime_end = _parse_date(date_end)
   if not datetime_end:
-    raise helpers.EarlyExitException('Missing end date.', 400)
+    raise helpers.EarlyExitError('Missing end date.', 400)
 
   if datetime_end < utils.utcnow().date():
-    logs.log('Building results for older stats %s %s %s %s %s.' %
-             (fuzzer, jobs, group_by, date_start, date_end))
+    logs.info('Building results for older stats %s %s %s %s %s.' %
+              (fuzzer, jobs, group_by, date_start, date_end))
 
     return _build_old_results(fuzzer, jobs, group_by, date_start, date_end)
 
-  logs.log('Building results for stats including today %s %s %s %s %s.' %
-           (fuzzer, jobs, group_by, date_start, date_end))
+  logs.info('Building results for stats including today %s %s %s %s %s.' %
+            (fuzzer, jobs, group_by, date_start, date_end))
 
   return _build_todays_results(fuzzer, jobs, group_by, date_start, date_end)
 
 
-@memoize.wrap(memoize.MemcacheLarge(MEMCACHE_TODAY_TTL_IN_SECONDS))
+@memoize.wrap(memoize.Memcache(MEMCACHE_TODAY_TTL_IN_SECONDS))
 def _build_todays_results(fuzzer, jobs, group_by, date_start, date_end):
   """Wrapper around _build_results that is intended for use by queries where
   date_end is today. Caches results for 15 minutes."""
   return _build_results(fuzzer, jobs, group_by, date_start, date_end)
 
 
-@memoize.wrap(memoize.MemcacheLarge(MEMCACHE_OLD_TTL_IN_SECONDS))
+@memoize.wrap(memoize.Memcache(MEMCACHE_OLD_TTL_IN_SECONDS))
 def _build_old_results(fuzzer, jobs, group_by, date_start, date_end):
   """Wrapper around _build_results that is intended for use by queries where
   date_end is before today. Caches results for 24 hours."""
@@ -327,11 +327,11 @@ def _build_results(fuzzer, jobs, group_by, date_start, date_end):
   date_end = _parse_date(date_end)
 
   if not fuzzer or not group_by or not date_start or not date_end:
-    raise helpers.EarlyExitException('Missing params.', 400)
+    raise helpers.EarlyExitError('Missing params.', 400)
 
   fuzzer_entity = _get_fuzzer_or_engine(fuzzer)
   if not fuzzer_entity:
-    raise helpers.EarlyExitException('Fuzzer not found.', 404)
+    raise helpers.EarlyExitError('Fuzzer not found.', 404)
 
   if fuzzer_entity.stats_columns:
     stats_columns = fuzzer_entity.stats_columns
@@ -340,7 +340,7 @@ def _build_results(fuzzer, jobs, group_by, date_start, date_end):
 
   group_by = _parse_group_by(group_by)
   if group_by is None:
-    raise helpers.EarlyExitException('Invalid grouping.', 400)
+    raise helpers.EarlyExitError('Invalid grouping.', 400)
 
   table_query = fuzzer_stats.TableQuery(fuzzer, jobs, stats_columns, group_by,
                                         date_start, date_end)
@@ -380,43 +380,71 @@ def _get_date(date_value, days_ago):
 
 
 class Handler(base_handler.Handler):
-  """Group by day handler."""
+  """Fuzzer stats main page handler."""
 
-  @handler.get(handler.HTML)
+  # pylint: disable=unused-argument
   @handler.unsupported_on_local_server
+  @handler.get(handler.HTML)
+  @handler.oauth
+  def get(self, extra=None):
+    """Handle a GET request."""
+    if not access.has_access():
+      # User is an external user of ClusterFuzz (eg: non-Chrome dev who
+      # submitted a fuzzer or someone with a project in OSS-Fuzz).
+      user_email = helpers.get_user_email()
+      fuzzers_list = external_users.allowed_fuzzers_for_user(
+          user_email, include_from_jobs=True, include_parents=True)
+      if not fuzzers_list:
+        # User doesn't actually have access to any fuzzers.
+        raise helpers.AccessDeniedError("You don't have access to any fuzzers.")
+
+    return self.render('fuzzer-stats.html', {})
+
+
+class LoadFiltersHandler(base_handler.Handler):
+  """Load filters handler."""
+
+  @handler.unsupported_on_local_server
+  @handler.get(handler.HTML)
   def get(self):
     """Handle a GET request."""
-    # Create a list of externally contributed fuzzers.
-    user_email = helpers.get_user_email()
+    project = request.get('project')
 
     if access.has_access():
       # User is an internal user of ClusterFuzz (eg: ClusterFuzz developer).
+
+      # Show all projects in the list, since this allows user to pick another
+      # project as needed.
+      projects_list = data_handler.get_all_project_names()
+
+      # Filter fuzzers and job list if a project is provided.
       fuzzers_list = (
           data_handler.get_all_fuzzer_names_including_children(
-              include_parents=True))
-      jobs_list = data_handler.get_all_job_type_names()
+              include_parents=True, project=project))
+      jobs_list = data_handler.get_all_job_type_names(project=project)
     else:
       # User is an external user of ClusterFuzz (eg: non-Chrome dev who
       # submitted a fuzzer or someone with a project in OSS-Fuzz).
-      fuzzers_list = external_users.allowed_fuzzers_for_user(
-          user_email, include_from_jobs=True, include_parents=True)
+      user_email = helpers.get_user_email()
 
+      # TODO(aarya): Filter fuzzer and job if |project| is provided.
+      fuzzers_list = sorted(
+          external_users.allowed_fuzzers_for_user(
+              user_email, include_from_jobs=True, include_parents=True))
       if not fuzzers_list:
         # User doesn't actually have access to any fuzzers.
-        raise helpers.AccessDeniedException()
+        raise helpers.AccessDeniedError("You don't have access to any fuzzers.")
 
-      jobs_list = external_users.allowed_jobs_for_user(user_email)
+      jobs_list = sorted(external_users.allowed_jobs_for_user(user_email))
+      projects_list = sorted(
+          {data_handler.get_project_name(job) for job in jobs_list})
 
-    fuzzers_list.sort()
-    jobs_list.sort()
     result = {
-        'info': {
-            'fuzzers': fuzzers_list,
-            'jobs': jobs_list,
-        }
+        'projects': projects_list,
+        'fuzzers': fuzzers_list,
+        'jobs': jobs_list,
     }
-
-    self.render('fuzzer-stats.html', result)
+    return self.render_json(result)
 
 
 class LoadHandler(base_handler.Handler):
@@ -440,24 +468,24 @@ class LoadHandler(base_handler.Handler):
       if allowed_jobs:
         return allowed_jobs
 
-    raise helpers.AccessDeniedException()
+    raise helpers.AccessDeniedError()
 
   @handler.post(handler.JSON, handler.JSON)
   def post(self):
     """Handle a POST request."""
-    fuzzer = self.request.get('fuzzer')
-    job = self.request.get('job')
-    group_by = self.request.get('group_by')
+    fuzzer = request.get('fuzzer')
+    job = request.get('job')
+    group_by = request.get('group_by')
 
     # If date_start is "": because the front end defaults to using a
     # start_date 7 days ago, do the same.
-    date_start = _get_date(self.request.get('date_start'), 7)
+    date_start = _get_date(request.get('date_start'), 7)
     # If date_end is "": don't get today's stats as they may not be
     # available, use yesterdays (as the front end does by default).
-    date_end = _get_date(self.request.get('date_end'), 1)
+    date_end = _get_date(request.get('date_end'), 1)
 
     job_filter = self._check_user_access_and_get_job_filter(fuzzer, job)
-    self.render_json(
+    return self.render_json(
         build_results(fuzzer, job_filter, group_by, date_start, date_end))
 
 
@@ -480,7 +508,7 @@ class PreloadHandler(base_handler.Handler):
 
     return fuzzer_job_filters
 
-  @handler.check_cron()
+  @handler.cron()
   def get(self):
     """Handle a GET request."""
     date_start = _get_date(None, 7)
@@ -490,30 +518,33 @@ class PreloadHandler(base_handler.Handler):
       group_by = 'by-fuzzer'
       try:
         build_results(fuzzer, job_filter, group_by, date_start, date_end)
-      except Exception:
-        logs.log_error('Failed to preload %s %s %s %s %s.' %
-                       (fuzzer, job_filter, group_by, date_start, date_end))
+      except Exception as e:
+        if 'No stats.' not in repr(e):
+          logs.error('Failed to preload %s %s %s %s %s.' %
+                     (fuzzer, job_filter, group_by, date_start, date_end))
 
       if not job_filter:
         # Group by job only makes sense for queries that do not specify job.
         group_by = 'by-job'
         try:
           build_results(fuzzer, job_filter, group_by, date_start, date_end)
-        except Exception:
-          logs.log_error('Failed to preload %s %s %s %s %s.' %
-                         (fuzzer, job_filter, group_by, date_start, date_end))
+        except Exception as e:
+          if 'No stats.' not in repr(e):
+            logs.error('Failed to preload %s %s %s %s %s.' %
+                       (fuzzer, job_filter, group_by, date_start, date_end))
 
 
 class RefreshCacheHandler(base_handler.Handler):
   """Refresh cache."""
 
-  @handler.check_cron()
+  @handler.cron()
   def get(self):
+    """Handle a GET request."""
     fuzzer_logs_context = fuzzer_stats.FuzzerRunLogsContext()
     fuzz_targets = data_handler.get_fuzz_targets()
 
     # Cache child fuzzer -> logs bucket mappings.
     for fuzz_target in fuzz_targets:
-      # pylint: disable=protected-access
+      # pylint: disable=protected-access,unexpected-keyword-arg
       fuzzer_logs_context._get_logs_bucket_from_fuzzer(
           fuzz_target.fully_qualified_name(), __memoize_force__=True)

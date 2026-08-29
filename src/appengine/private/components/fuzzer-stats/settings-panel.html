@@ -1,5 +1,5 @@
 <!--
-  Copyright 2018 Google LLC
+  Copyright 2019 Google LLC
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@
 <link rel="import" href="date-picker.html">
 
 <dom-module id="settings-panel">
+  <link rel="import" href="../../stylesheets/main.css" type="css">
   <link rel="import" href="../technology/technology.css" type="css">
   <template>
     <style>
@@ -51,11 +52,19 @@
 
       :host .settings-panel paper-dropdown-menu {
         width: 160px;
+
+        --paper-input-container-input: {
+          font-size: 16px;
+        };
       }
 
       :host .date {
         width: 160px;
         display: inline-block;
+      }
+
+      :host #project {
+        width: 200px;
       }
 
       :host #fuzzerName {
@@ -67,19 +76,81 @@
       }
     </style>
     <div class="settings-panel">
-      <paper-dropdown-menu id="fuzzerName" no-animations="true" label="Fuzzer name" noink>
-        <paper-listbox selected="{{settings.fuzzer}}" attr-for-selected="value" slot="dropdown-content" class="dropdown-content">
-          <paper-item value="">All</paper-item>
-          <template is="dom-repeat" items="[[fuzzers]]">
-            <paper-item value="{{item}}">{{item}}</paper-item>
+      <paper-dropdown-menu
+          id="project"
+          class="dropdown-filter"
+          no-animations="true"
+          label="Project"
+          value="All"
+          noink>
+        <paper-listbox
+            selected="{{settings.project}}"
+            attr-for-selected="val"
+            slot="dropdown-content"
+            class="dropdown-content">
+          <paper-input
+              label="Search projects"
+              value="{{projectKey}}"
+              on-tap="stopEventPropagation"
+              on-keydown="stopEventPropagation"
+              on-keyup="stopEventPropagation" no-label-float>
+            <iron-icon icon="icons:search" slot="prefix"></iron-icon>
+            <iron-icon icon="icons:clear" slot="suffix" on-click="clearSearchInput"></iron-icon>
+          </paper-input>
+          <template is="dom-repeat" items="[[projects]]" filter="{{onmatch(projectKey)}}">
+            <paper-item val="{{item}}">{{item}}</paper-item>
           </template>
         </paper-listbox>
       </paper-dropdown-menu>
-      <paper-dropdown-menu id="jobType" no-animations="true" label="Job type" noink>
-        <paper-listbox class="dropdown-content" attr-for-selected="value" slot="dropdown-content" selected="{{settings.job}}">
-          <paper-item value="">All</paper-item>
-          <template is="dom-repeat" items="[[jobs]]">
-            <paper-item value="{{item}}">{{item}}</paper-item>
+      <paper-dropdown-menu
+          id="fuzzerName"
+          class="dropdown-filter"
+          no-animations="true"
+          label="Fuzzer"
+          value="All"
+          noink>
+        <paper-listbox
+            selected="{{settings.fuzzer}}"
+            attr-for-selected="val"
+            slot="dropdown-content"
+            class="dropdown-content">
+          <paper-input
+              label="Search fuzzers"
+              value="{{fuzzerKey}}"
+              on-tap="stopEventPropagation"
+              on-keydown="stopEventPropagation"
+              on-keyup="stopEventPropagation" no-label-float>
+            <iron-icon icon="icons:search" slot="prefix"></iron-icon>
+            <iron-icon icon="icons:clear" slot="suffix" on-click="clearSearchInput"></iron-icon>
+          </paper-input>
+          <template is="dom-repeat" items="[[fuzzers]]" filter="{{onmatch(fuzzerKey)}}">
+            <paper-item val="{{item}}">{{item}}</paper-item>
+          </template>
+        </paper-listbox>
+      </paper-dropdown-menu>
+      <paper-dropdown-menu
+          id="jobType"
+          class="dropdown-filter"
+          no-animations="true"
+          label="Job type"
+          value="All"
+          noink>
+        <paper-listbox
+            class="dropdown-content"
+            attr-for-selected="val"
+            slot="dropdown-content"
+            selected="{{settings.job}}">
+          <paper-input
+              label="Search jobs"
+              value="{{jobKey}}"
+              on-tap="stopEventPropagation"
+              on-keydown="stopEventPropagation"
+              on-keyup="stopEventPropagation" no-label-float>
+            <iron-icon icon="icons:search" slot="prefix"></iron-icon>
+            <iron-icon icon="icons:clear" slot="suffix" on-click="clearSearchInput"></iron-icon>
+          </paper-input>
+          <template is="dom-repeat" items="[[jobs]]" filter="{{onmatch(jobKey)}}">
+            <paper-item val="{{item}}">{{item}}</paper-item>
           </template>
         </paper-listbox>
       </paper-dropdown-menu>
@@ -187,6 +258,42 @@
       shouldDisableSubmit(submitDisabled, loading) {
         return submitDisabled || loading;
       },
+
+      onmatch(key) {
+        if (!key)
+          return null;
+
+        try {
+          key = key.toLowerCase();
+        } catch (err) {}
+
+        return function(item) {
+          if (item.toLowerCase().search(key) >= 0)
+            return true;
+        };
+      },
+
+      stopEventPropagation(ev) {
+        ev.stopPropagation();
+      },
+
+      clearSearchInput(ev) {
+        // Clear the search box.
+        let searchBox = ev.target.parentNode;
+        searchBox.value = '';
+
+        // Clear the selection in the list box;
+        let listBox = searchBox.parentNode;
+        listBox.selected = '';
+
+        // Reset dropdown value.
+        let dropdownMenu = listBox.parentNode;
+        dropdownMenu.value = 'All';
+
+        // Restore focus to searchbox.
+        searchBox.$.input.focus();
+      }
+
     });
   </script>
 </dom-module>

@@ -43,7 +43,7 @@ instrumented with a [sanitizer]. See the individual links for each sanitizer
   Uploading can be done via [gsutil tool](https://cloud.google.com/storage/docs/gsutil)
   or by using [signed URLs](https://cloud.google.com/storage/docs/access-control/signed-urls).
 * The archive name should be of `any-name-([0-9]+).zip` format, where `([0-9]+)`
-  stands for a revision number such as SVN commit position, a timestamp, or
+  stands for a revision number such as SVN commit position, a timestamp (e.g. `YYYYMMDDHHMM`), or
   another build number which **increases** with every build. Other than `zip`,
   we support
   [tar extensions](https://en.wikipedia.org/wiki/Tar_(computing)#Suffixes_for_compressed_files)
@@ -110,7 +110,7 @@ Most of the Continuous Integration systems can be used for providing builds to
 ClusterFuzz. Examples include [Google Cloud Build](https://cloud.google.com/cloud-build/docs/),
 [Jenkins](https://jenkins.io/), and others.
 
-[libFuzzer or AFL]:{{ site.baseurl }}/setting-up-fuzzing/libfuzzer_and_afl/
-[seed corpus]: {{ site.baseurl }}/setting-up-fuzzing/libfuzzer_and_afl/#seed-corpus
-[dictionary]: {{ site.baseurl }}/setting-up-fuzzing/libfuzzer_and_afl/#dictionaries
+[libFuzzer or AFL]:{{ site.baseurl }}/setting-up-fuzzing/libfuzzer-and-afl/
+[seed corpus]: {{ site.baseurl }}/setting-up-fuzzing/libfuzzer-and-afl/#seed-corpus
+[dictionary]: {{ site.baseurl }}/setting-up-fuzzing/libfuzzer-and-afl/#dictionaries
 [setting up a fuzzing job]: {{ site.baseurl }}/production-setup/setting-up-fuzzing-job/

@@ -13,10 +13,11 @@
 # limitations under the License.
 """Configuration Manager."""
 
-from base import utils
-from config import db_config
-from datastore import data_types
+from flask import request
 
+from clusterfuzz._internal.base import utils
+from clusterfuzz._internal.config import db_config
+from clusterfuzz._internal.datastore import data_types
 from handlers import base_handler
 from libs import form
 from libs import handler
@@ -29,7 +30,11 @@ USER_PERMISSION_ENTITY_KINDS = [
     },
     {
         'name': 'job',
-        'value': data_types.PermissionEntityKind.JOB
+        'value': data_types.PermissionEntityKind.JOB,
+    },
+    {
+        'name': 'uploader',
+        'value': data_types.PermissionEntityKind.UPLOADER,
     },
 ]
 
@@ -61,8 +66,8 @@ def get_value_by_name(item_list, name):
 class Handler(base_handler.Handler):
   """Configuration manager."""
 
-  @handler.check_admin_access
   @handler.get(handler.HTML)
+  @handler.check_admin_access
   def get(self):
     """Handle a get request."""
     external_user_permissions = list(
@@ -84,49 +89,50 @@ class Handler(base_handler.Handler):
     }
 
     helpers.log('Configuration', helpers.VIEW_OPERATION)
-    self.render('configuration.html', template_values)
+    return self.render('configuration.html', template_values)
 
+  @handler.post(handler.FORM, handler.HTML)
   @handler.check_admin_access
   @handler.require_csrf_token
-  @handler.post(handler.FORM, handler.HTML)
   def post(self):
     """Handle a post request."""
     config = db_config.get()
     if not config:
       config = data_types.Config()
 
-    previous_hash = self.request.get('previous_hash')
+    previous_hash = request.get('previous_hash')
     if config.previous_hash and config.previous_hash != previous_hash:
-      raise helpers.EarlyExitException(
+      raise helpers.EarlyExitError(
           'Your change conflicts with another configuration update. '
           'Please refresh and try again.', 500)
 
-    build_apiary_service_account_email = self.request.get(
-        'build_apiary_service_account_email')
-    build_apiary_service_account_private_key = self.request.get(
+    build_apiary_service_account_private_key = request.get(
         'build_apiary_service_account_private_key')
-    bug_report_url = self.request.get('bug_report_url')
-    client_credentials = self.request.get('client_credentials')
-    component_repository_mappings = self.request.get(
-        'component_repository_mappings')
-    contact_string = self.request.get('contact_string')
-    documentation_url = self.request.get('documentation_url')
-    github_credentials = self.request.get('github_credentials')
-    platform_group_mappings = self.request.get('platform_group_mappings')
-    privileged_users = self.request.get('privileged_users')
-    relax_testcase_restrictions = self.request.get(
-        'relax_testcase_restrictions')
-    reproduction_help_url = self.request.get('reproduction_help_url')
-    revision_vars_url = self.request.get('revision_vars_url')
-    stack_blacklist = self.request.get('stack_blacklist')
-    stack_clean_regex = self.request.get('stack_clean_regex')
-    test_account_email = self.request.get('test_account_email')
-    test_account_password = self.request.get('test_account_password')
-    wifi_ssid = self.request.get('wifi_ssid')
-    wifi_password = self.request.get('wifi_password')
+    bug_report_url = request.get('bug_report_url')
+    client_credentials = request.get('client_credentials')
+    jira_url = request.get('jira_url')
+    jira_credentials = request.get('jira_credentials')
+    component_repository_mappings = request.get('component_repository_mappings')
+    contact_string = request.get('contact_string')
+    documentation_url = request.get('documentation_url')
+    github_credentials = request.get('github_credentials')
+    oss_fuzz_robot_github_personal_access_token = request.get(
+        'oss_fuzz_robot_github_personal_access_token')
+    platform_group_mappings = request.get('platform_group_mappings')
+    privileged_users = request.get('privileged_users')
+    privileged_groups = request.get('privileged_groups')
+    blacklisted_users = request.get('blacklisted_users')
+    relax_security_bug_restrictions = request.get(
+        'relax_security_bug_restrictions')
+    relax_testcase_restrictions = request.get('relax_testcase_restrictions')
+    reproduction_help_url = request.get('reproduction_help_url')
+    test_account_email = request.get('test_account_email')
+    test_account_password = request.get('test_account_password')
+    wifi_ssid = request.get('wifi_ssid')
+    wifi_password = request.get('wifi_password')
+    sendgrid_api_key = request.get('sendgrid_api_key')
+    sendgrid_sender = request.get('sendgrid_sender')
 
-    config.build_apiary_service_account_email = (
-        build_apiary_service_account_email)
     config.build_apiary_service_account_private_key = (
         build_apiary_service_account_private_key)
     config.bug_report_url = bug_report_url
@@ -135,17 +141,24 @@ class Handler(base_handler.Handler):
     config.contact_string = contact_string
     config.documentation_url = documentation_url
     config.github_credentials = github_credentials
+    config.oss_fuzz_robot_github_personal_access_token = (
+        oss_fuzz_robot_github_personal_access_token)
+    config.jira_credentials = jira_credentials
+    config.jira_url = jira_url
     config.platform_group_mappings = platform_group_mappings
     config.privileged_users = privileged_users
+    config.privileged_groups = privileged_groups
+    config.blacklisted_users = blacklisted_users
+    config.relax_security_bug_restrictions = bool(
+        relax_security_bug_restrictions)
     config.relax_testcase_restrictions = bool(relax_testcase_restrictions)
     config.reproduction_help_url = reproduction_help_url
-    config.revision_vars_url = revision_vars_url
-    config.stack_blacklist = stack_blacklist
-    config.stack_clean_regex = stack_clean_regex
     config.test_account_email = test_account_email
     config.test_account_password = test_account_password
     config.wifi_ssid = wifi_ssid
     config.wifi_password = wifi_password
+    config.sendgrid_api_key = sendgrid_api_key
+    config.sendgrid_sender = sendgrid_sender
 
     helpers.log('Configuration', helpers.MODIFY_OPERATION)
 
@@ -164,42 +177,47 @@ class Handler(base_handler.Handler):
         'redirect_url':
             '/configuration',
     }
-    self.render('message.html', template_values)
+    return self.render('message.html', template_values)
 
 
 class AddExternalUserPermission(base_handler.Handler):
   """Handles adding a new ExternalUserPermission."""
 
+  @handler.post(handler.FORM, handler.HTML)
   @handler.check_admin_access
   @handler.require_csrf_token
-  @handler.post(handler.FORM, handler.HTML)
   def post(self):
     """Handle a post request."""
-    email = utils.normalize_email(self.request.get('email'))
-    entity_kind = self.request.get('entity_kind')
-    entity_name = self.request.get('entity_name')
-    is_prefix = self.request.get('is_prefix')
-    auto_cc = self.request.get('auto_cc')
+    email = utils.normalize_email(request.get('email'))
+    entity_kind = request.get('entity_kind')
+    entity_name = request.get('entity_name')
+    is_prefix = request.get('is_prefix')
+    auto_cc = request.get('auto_cc')
 
     if not email:
-      raise helpers.EarlyExitException('No email provided.', 400)
-
-    if not entity_name:
-      raise helpers.EarlyExitException('No entity_name provided.', 400)
+      raise helpers.EarlyExitError('No email provided.', 400)
 
     if not entity_kind or entity_kind == 'undefined':
-      raise helpers.EarlyExitException('No entity_kind provided.', 400)
+      raise helpers.EarlyExitError('No entity_kind provided.', 400)
 
     entity_kind = get_value_by_name(USER_PERMISSION_ENTITY_KINDS, entity_kind)
     if entity_kind is None:
-      raise helpers.EarlyExitException('Invalid entity_kind provided.', 400)
+      raise helpers.EarlyExitError('Invalid entity_kind provided.', 400)
 
-    if not auto_cc or auto_cc == 'undefined':
-      raise helpers.EarlyExitException('No auto_cc provided.', 400)
+    if entity_kind == data_types.PermissionEntityKind.UPLOADER:
+      # Enforce null values for entity name and auto-cc when uploader is chosen.
+      entity_name = None
+      auto_cc = data_types.AutoCCType.NONE
+    else:
+      if not entity_name:
+        raise helpers.EarlyExitError('No entity_name provided.', 400)
 
-    auto_cc = get_value_by_name(USER_PERMISSION_AUTO_CC_TYPES, auto_cc)
-    if auto_cc is None:
-      raise helpers.EarlyExitException('Invalid auto_cc provided.', 400)
+      if not auto_cc or auto_cc == 'undefined':
+        raise helpers.EarlyExitError('No auto_cc provided.', 400)
+
+      auto_cc = get_value_by_name(USER_PERMISSION_AUTO_CC_TYPES, auto_cc)
+      if auto_cc is None:
+        raise helpers.EarlyExitError('Invalid auto_cc provided.', 400)
 
     # Check for existing permission.
     query = data_types.ExternalUserPermission.query(
@@ -221,39 +239,42 @@ class AddExternalUserPermission(base_handler.Handler):
     template_values = {
         'title':
             'Success',
-        'message':
-            ('User %s permission for entity %s is successfully added. '
-             'Redirecting to the configuration page...') % (email, entity_name),
+        'message': (f'User {email} permission for entity {entity_name} '
+                    'is successfully added. '
+                    'Redirecting to the configuration page...'),
         'redirect_url':
             '/configuration',
     }
-    self.render('message.html', template_values)
+    return self.render('message.html', template_values)
 
 
 class DeleteExternalUserPermission(base_handler.Handler):
   """Handles deleting an ExternalUserPermission."""
 
+  @handler.post(handler.FORM, handler.HTML)
   @handler.check_admin_access
   @handler.require_csrf_token
-  @handler.post(handler.FORM, handler.HTML)
   def post(self):
     """Handle a post request."""
-    email = self.request.get('email')
-    entity_kind = self.request.get('entity_kind')
-    entity_name = self.request.get('entity_name')
+    email = request.get('email')
+    entity_kind = request.get('entity_kind')
+    entity_name = request.get('entity_name')
 
     if not email:
-      raise helpers.EarlyExitException('No email provided.', 400)
-
-    if not entity_name:
-      raise helpers.EarlyExitException('No entity_name provided.', 400)
+      raise helpers.EarlyExitError('No email provided.', 400)
 
     if not entity_kind or entity_kind == 'undefined':
-      raise helpers.EarlyExitException('No entity_kind provided.', 400)
+      raise helpers.EarlyExitError('No entity_kind provided.', 400)
 
     entity_kind = get_value_by_name(USER_PERMISSION_ENTITY_KINDS, entity_kind)
     if entity_kind is None:
-      raise helpers.EarlyExitException('Invalid entity_kind provided.', 400)
+      raise helpers.EarlyExitError('Invalid entity_kind provided.', 400)
+
+    if entity_kind == data_types.PermissionEntityKind.UPLOADER:
+      entity_name = None
+    else:
+      if not entity_name:
+        raise helpers.EarlyExitError('No entity_name provided.', 400)
 
     # Check for existing permission.
     permission = data_types.ExternalUserPermission.query(
@@ -261,17 +282,17 @@ class DeleteExternalUserPermission(base_handler.Handler):
         data_types.ExternalUserPermission.entity_kind == entity_kind,
         data_types.ExternalUserPermission.entity_name == entity_name).get()
     if not permission:
-      raise helpers.EarlyExitException('Permission does not exist.', 400)
+      raise helpers.EarlyExitError('Permission does not exist.', 400)
     permission.key.delete()
 
     helpers.log('Configuration', helpers.MODIFY_OPERATION)
     template_values = {
         'title':
             'Success',
-        'message':
-            ('User %s permission for entity %s is successfully deleted. '
-             'Redirecting to the configuration page...') % (email, entity_name),
+        'message': (f'User {email} permission for entity {entity_name} '
+                    'is successfully deleted. '
+                    'Redirecting to the configuration page...'),
         'redirect_url':
             '/configuration',
     }
-    self.render('message.html', template_values)
+    return self.render('message.html', template_values)

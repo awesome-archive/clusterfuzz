@@ -5,10 +5,11 @@ enable=
   indexing-exception,
   old-raise-syntax,
 
+load-plugins=pylint_protobuf
+
 # List of checkers and warnings to disable.
 # TODO: Shrink this list to as small as possible.
 disable=
-  attribute-defined-outside-init,
   bad-option-value,
   bare-except,
   broad-except,
@@ -18,21 +19,23 @@ disable=
   fixme,
   global-statement,
   import-error,
+  import-outside-toplevel,
   locally-disabled,
-  misplaced-comparison-constant,
-  multiple-imports,
-  no-member,
-  no-name-in-module,
   no-self-use,
   relative-import,
   similarities,
-  suppressed-message,
   ungrouped-imports,
   unsubscriptable-object,
-  useless-suppression,
-  wrong-import-order,
   wrong-import-position,
-
+  # TODO(https://github.com/google/clusterfuzz/issues/4138): Fix this.
+  wrong-import-order,
+  # FIXME: To be removed. Leftovers from Python 3 migration.
+  consider-using-with,
+  raise-missing-from,
+  super-with-arguments,
+  consider-using-generator,
+  consider-using-f-string,  # Too many legacy usages.
+  unspecified-encoding  # Too many legacy usage.
 
 [BASIC]
 
@@ -49,7 +52,7 @@ docstring-min-length=10
 #
 # There are exceptions to the basic rule (_?[a-z][a-z0-9_]*) to cover
 # requirements of Python's module system and of the presubmit framework.
-module-rgx=^(_?[a-z][a-z0-9_]*)|__init__|PRESUBMIT|PRESUBMIT_unittest$
+module-rgx=^(_?[a-z][a-z0-9_]*)|__init__|__main__|PRESUBMIT|PRESUBMIT_unittest$
 
 # Regular expression which should only match correct module level names.
 const-rgx=^(_?[A-Z][A-Z0-9_]*|__[a-z0-9_]+__|_?[a-z][a-z0-9_]*)$
@@ -90,14 +93,14 @@ variable-rgx=^[a-z][a-z0-9_]*$
 inlinevar-rgx=^[a-z][a-z0-9_]*$
 
 # Good variable names which should always be accepted, separated by a comma.
-good-names=main,_
+good-names=main,_,maxDiff
 
 # Bad variable names which should always be refused, separated by a comma.
 bad-names=
 
+# FIXME: Renable this.
 # List of builtins function names that should not be used, separated by a comma.
-bad-functions=input,apply,reduce
-
+#bad-builtin=input
 
 [FORMAT]
 
@@ -109,10 +112,6 @@ max-module-lines=99999
 
 # String used as indentation unit. We differ from PEP8's normal 4 spaces.
 indent-string='  '
-
-# Make sure : in dicts and trailing commas are checked for whitespace.
-no-space-check=
-
 
 [TYPECHECK]
 

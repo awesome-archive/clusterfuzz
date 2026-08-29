@@ -41,12 +41,37 @@ If you're new to Google Cloud you may be eligible for [trial credit].
 
 [trial credit]: https://cloud.google.com/free/docs/gcp-free-tier#free-trial
 
+## Enable Firebase
+1. Follow [these instructions](https://cloud.google.com/appengine/docs/standard/python3/building-app/adding-firebase)
+   to add Firebase to the Google Cloud project you just created. This will be
+   used for authentication and should not incur any additional charges.
+
+2. In the [Firebase console], go to the **Auth** section and enable "Google" as
+   a Sign-in provider.
+
+3. In the same section, add the domains you plan on using to the "Authorized
+   domains" list. The default domain for App Engine looks like
+   `<your project id>.appspot.com`.
+
+### Web API Key
+To obtain a web API key,
+1. Go to the [Firebase console] and select your project.
+2. From the project overview page, click **Add Firebase to your web app** to
+   display the customized code snippet.
+3. Copy the `apiKey` value, and export it like so:
+
+```bash
+export FIREBASE_API_KEY=<your api key>
+```
+
+[Firebase console]: https://console.firebase.google.com/
+
 ## Create OAuth credentials
 Follow [these instructions](https://developers.google.com/identity/protocols/OAuth2InstalledApp#creatingcred)
 to create OAuth credentials for our project setup script. Choose
 `OAuth client ID` credential type. When prompted for an application type, choose
-`Other`. You may also need to fill in the application name on "OAuth consent
-screen" tab, enter any name of your choice, e.g. `MyClusterFuzz`.
+`Desktop app`. You may also need to fill in the application name on "OAuth
+consent screen" tab, enter any name of your choice, e.g. `MyClusterFuzz`.
 
 Download these credentials as JSON and place it somewhere safe. Export the path
 for later use:
@@ -65,9 +90,10 @@ This script also creates a config directory for you, which contains some default
 settings for your deployment and can be later updated.
 
 ```bash
-mkdir /path/to/myconfig  # Any directory outside the ClusterFuzz source repository will work.
+mkdir /path/to/myconfig  # Any EMPTY directory outside the ClusterFuzz source repository.
 export CONFIG_DIR=/path/to/myconfig
-python butler.py create_config --oauth-client-secrets-path=$CLIENT_SECRETS_PATH --project-id=$CLOUD_PROJECT_ID $CONFIG_DIR
+python butler.py create_config --oauth-client-secrets-path=$CLIENT_SECRETS_PATH \
+  --firebase-api-key=$FIREBASE_API_KEY --project-id=$CLOUD_PROJECT_ID $CONFIG_DIR
 ```
 
 This can take a few minutes to finish, so please be patient. The script also
@@ -131,4 +157,4 @@ We provide [Docker images] for running ClusterFuzz bots.
 [Google Compute Engine]: https://cloud.google.com/compute/
 [service account]: https://cloud.google.com/iam/docs/creating-managing-service-account-keys
 [Docker images]: https://github.com/google/clusterfuzz/tree/master/docker
-[preemptible]: {{ site.baseurl }}/architecture/#bots
+[preemptible]: {{ site.baseurl }}/architecture/#fuzzing-bots

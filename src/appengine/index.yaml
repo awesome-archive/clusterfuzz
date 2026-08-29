@@ -44,21 +44,6 @@ indexes:
   - name: bad_build
   - name: job_type
 
-- kind: CodeCoverage
-  properties:
-  - name: status
-  - name: platform
-  - name: timestamp
-    direction: desc
-
-- kind: CodeCoverage
-  properties:
-  - name: status
-  - name: fuzzer_name
-  - name: job_type
-  - name: timestamp
-    direction: desc
-
 - kind: CoverageInformation
   properties:
   - name: fuzzer
@@ -102,6 +87,16 @@ indexes:
   - name: entity_name
   - name: entity_kind
 
+- kind: FiledBug
+  properties:
+  - name: timestamp
+  - name: job_type
+
+- kind: FiledBug
+  properties:
+  - name: timestamp
+  - name: project_name
+
 - kind: FuzzTarget
   properties:
   - name: engine
@@ -111,6 +106,7 @@ indexes:
   properties:
   - name: engine
   - name: weight
+  - name: last_run
 
 - kind: ReportMetadata
   properties:
@@ -124,26 +120,6 @@ indexes:
   - name: is_uploaded
   - name: job_type
   - name: crash_revision
-
-- kind: SheriffItem
-  properties:
-  - name: item_type
-  - name: priority
-
-- kind: SheriffItem
-  properties:
-  - name: item_type
-  - name: package
-
-- kind: StatusDashboardItem
-  properties:
-  - name: identifier
-  - name: type
-
-- kind: StatusDashboardItem
-  properties:
-  - name: resolved
-  - name: current_timestamp
 
 - kind: Testcase
   properties:
@@ -184,6 +160,7 @@ indexes:
   - name: fuzzer_name
   - name: job_type
   - name: overridden_fuzzer_name
+  - name: project_name
   - name: security_flag
 
 - kind: Testcase
@@ -366,8 +343,10 @@ indexes:
   - name: project_name
   - name: platform
   - name: is_impact_set_flag
+  - name: impact_extended_stable_version
   - name: impact_stable_version
   - name: impact_beta_version
+  - name: impact_head_version
   - name: timestamp
 
 - kind: Testcase
@@ -382,6 +361,8 @@ indexes:
   - name: group_id
   - name: impact_beta_version
   - name: impact_stable_version
+  - name: impact_extended_stable_version
+  - name: impact_head_version
   - name: is_impact_set_flag
   - name: job_type
   - name: one_time_crasher_flag
@@ -476,6 +457,12 @@ indexes:
 
 - kind: Testcase
   properties:
+  - name: impact_extended_stable_version_indices
+  - name: timestamp
+    direction: desc
+
+- kind: Testcase
+  properties:
   - name: impact_stable_version_indices
   - name: timestamp
     direction: desc
@@ -534,6 +521,20 @@ indexes:
   - name: overridden_fuzzer_name
   - name: timestamp
 
+- kind: Testcase
+  properties:
+    - name: bug_information
+    - name: open
+    - name: one_time_crasher_flag
+
+- kind: Testcase
+  properties:
+  - name: open
+  - name: status
+  - name: timestamp
+    direction: desc
+  - name: bug_information
+
 - kind: _AE_Pipeline_Record
   properties:
   - name: is_root_pipeline
@@ -561,3 +562,66 @@ indexes:
   properties:
   - name: platform
   - name: tag
+
+- kind: TestcaseVariant
+  properties:
+    - name: testcase_id
+    - name: job_type
+
+- kind: TestcaseVariant
+  properties:
+    - name: testcase_id
+    - name: status
+    - name: job_type
+      direction: asc
+
+- kind: Job
+  properties:
+    - name: project
+    - name: name
+
+- kind: Job
+  properties:
+    - name: keywords
+    - name: name
+
+- kind: Heartbeat
+  properties:
+    - name: keywords
+    - name: bot_name
+
+- kind: WindowRateLimitTask
+  properties:
+    - name: job_name
+    - name: task_argument
+    - name: task_name
+    - name: timestamp
+
+- kind: Testcase
+  properties:
+  - name: one_time_crasher_flag
+  - name: open
+  - name: status
+  - name: fixed
+  - name: timestamp
+
+- kind: TestcaseLifecycleEvent
+  properties:
+  - name: testcase_id
+  - name: event_type
+  - name: task_name
+  - name: timestamp
+    direction: desc
+
+- kind: TestcaseLifecycleEvent
+  properties:
+  - name: testcase_id
+  - name: event_type
+  - name: timestamp
+    direction: desc
+
+- kind: TestcaseLifecycleEvent
+  properties:
+  - name: testcase_id
+  - name: timestamp
+    direction: desc

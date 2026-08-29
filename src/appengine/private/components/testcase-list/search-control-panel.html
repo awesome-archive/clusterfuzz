@@ -1,5 +1,5 @@
 <!--
-  Copyright 2018 Google LLC
+  Copyright 2019 Google LLC
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@
 <link rel="import" href="../common/render-either/render-either.html">
 
 <dom-module id="search-control-panel">
+  <link rel="import" href="../../stylesheets/main.css" type="css">
   <link rel="import" href="../technology/technology.css" type="css">
   <template>
     <style>
@@ -37,19 +38,6 @@
 
       table td.filters {
         text-align: right;
-      }
-
-      paper-dropdown-menu {
-        width: 60px;
-
-        --paper-input-container-label: {
-          color: #666;
-          font-size: 18px;
-        };
-        --paper-input-container-input: {
-          color: #888;
-          font-size: 14px;
-        };
       }
 
       #jobs, #fuzzers {
@@ -102,6 +90,10 @@
         font-size: 12px;
         color: #888;
       }
+
+      paper-dropdown-menu {
+        width: 60px;
+      }
     </style>
     <table>
       <tr>
@@ -121,50 +113,30 @@
           <template is="dom-if" if="[[shouldShowProjects(fieldValues)]]">
             <paper-dropdown-menu
                 id="projects"
+                class="dropdown-filter"
                 no-animations="true"
                 label="Project"
+                value="All"
                 noink>
               <paper-listbox
                   slot="dropdown-content"
                   selected="{{params.project}}"
-                  attr-for-selected="value">
-                <paper-item on-click="submit" value="">All</paper-item>
-                <template is="dom-repeat" items="[[fieldValues.projects]]">
-                  <paper-item on-click="submit" value="[[sanitise(item)]]">[[item]]</paper-item>
+                  attr-for-selected="val">
+                <paper-input
+                    label="Search projects"
+                    value="{{projectKey}}"
+                    on-tap="stopEventPropagation"
+                    on-keydown="stopEventPropagation"
+                    on-keyup="stopEventPropagation" no-label-float>
+                  <iron-icon icon="icons:search" slot="prefix"></iron-icon>
+                  <iron-icon icon="icons:clear" slot="suffix" on-click="clearSearchInput"></iron-icon>
+                </paper-input>
+                <template is="dom-repeat" items="[[fieldValues.projects]]" filter="{{onmatch(projectKey)}}">
+                  <paper-item on-click="submit" val="[[sanitise(item)]]">[[item]]</paper-item>
                 </template>
               </paper-listbox>
             </paper-dropdown-menu>
           </template>
-          <paper-dropdown-menu
-              id="fuzzers"
-              no-animations="true"
-              label="Fuzzer"
-              noink>
-            <paper-listbox
-                slot="dropdown-content"
-                selected="{{params.fuzzer}}"
-                attr-for-selected="value">
-              <paper-item on-click="submit" value="">All</paper-item>
-              <template is="dom-repeat" items="[[fieldValues.fuzzers]]">
-                <paper-item on-click="submit" value="[[sanitise(item)]]">[[item]]</paper-item>
-              </template>
-            </paper-listbox>
-          </paper-dropdown-menu>
-          <paper-dropdown-menu
-              id="jobs"
-              no-animations="true"
-              label="Job"
-              noink>
-            <paper-listbox
-                slot="dropdown-content"
-                selected="{{params.job}}"
-                attr-for-selected="value">
-              <paper-item on-click="submit" value="">All</paper-item>
-              <template is="dom-repeat" items="[[fieldValues.jobs]]">
-                <paper-item on-click="submit" value="[[sanitise(item)]]">[[item]]</paper-item>
-              </template>
-            </paper-listbox>
-          </paper-dropdown-menu>
           <template is="dom-if" if="[[fieldValues.shouldShowImpact]]">
             <paper-dropdown-menu
                 id="impactOptions"
@@ -176,6 +148,7 @@
                   selected="{{params.impact}}"
                   attr-for-selected="value">
                 <paper-item on-click="submit" value="">All</paper-item>
+                <paper-item on-click="submit" value="extended_stable">Extended Stable</paper-item>
                 <paper-item on-click="submit" value="stable">Stable</paper-item>
                 <paper-item on-click="submit" value="beta">Beta</paper-item>
                 <paper-item on-click="submit" value="head">Head</paper-item>
@@ -263,7 +236,7 @@
             type: Number,
             value: 0
           },
-          keywordFocused: Boolean
+          keywordFocused: Boolean,
         };
       }
 
@@ -343,6 +316,44 @@
       shouldShowProjects(fieldValues) {
         return fieldValues && fieldValues.projects &&
             fieldValues.projects.length > 1;
+      }
+
+      onmatch(key) {
+        if (!key)
+          return null;
+
+        try {
+          key = key.toLowerCase();
+        } catch (err) {}
+
+        return function(item) {
+          if (item.toLowerCase().search(key) >= 0)
+            return true;
+        };
+      }
+
+      stopEventPropagation(ev) {
+        ev.stopPropagation();
+      }
+
+      clearSearchInput(ev) {
+        // Clear the search box.
+        let searchBox = ev.target.parentNode;
+        searchBox.value = '';
+
+        // Clear the selection in the list box;
+        let listBox = searchBox.parentNode;
+        listBox.selected = '';
+
+        // Reset dropdown value.
+        let dropdownMenu = listBox.parentNode;
+        dropdownMenu.value = 'All';
+
+        // Update the search params in url.
+        this.submit();
+
+        // Don't restore focus to the keyword box.
+        this.keywordFocused = true;
       }
     }
 

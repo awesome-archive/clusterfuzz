@@ -15,10 +15,11 @@
 
 import collections
 import os
+import sys
 
 # Chromedriver related constants.
 CHROMEDRIVER_VERSION_URL = (
-    'https://commondatastorage.googleapis.com/chromedriver/LATEST_RELEASE')
+    'https://commondatastorage.googleapis.com/chromedriver/LATEST_RELEASE_101')
 CHROMEDRIVER_DOWNLOAD_PATTERN = (
     'https://commondatastorage.googleapis.com/chromedriver/{version}/'
     '{archive_name}')
@@ -33,13 +34,28 @@ LEGACY_ZIP_NAME = 'clusterfuzz-source.zip'
 PACKAGE_TARGET_MANIFEST_PATH = os.path.join('src', 'appengine', 'resources',
                                             'clusterfuzz-source.manifest')
 
-# Supported Platforms and ABIS.
+# Supported Platforms and ABIS (newer to older order).
 PLATFORMS = collections.OrderedDict([
     ('windows', 'win_amd64'),
-    ('macos', ('macosx_10_10_intel', 'macosx_10_12_x86_64')),
-    ('linux', 'manylinux1_x86_64'),
+    ('macos', ('macosx_10_14_x86_64', 'macosx_10_12_x86_64')),
+    ('linux', ('manylinux2014_x86_64')),
 ])
-ABIS = {'linux': 'cp27mu', 'windows': 'cp27m', 'macos': 'cp27m'}
+
+# Additional required packages when deploying to prod.
+ADDITIONAL_RELEASES = ['chrome-tests-syncer']
+
+if sys.version_info.major == 3 and sys.version_info.minor == 7:
+  ABIS = {'linux': 'cp37m', 'windows': 'cp37m', 'macos': 'cp37m'}
+elif sys.version_info.major == 3 and sys.version_info.minor == 8:
+  ABIS = {'linux': 'cp38', 'windows': 'cp38', 'macos': 'cp38'}
+elif sys.version_info.major == 3 and sys.version_info.minor == 9:
+  ABIS = {'linux': 'cp39', 'windows': 'cp39', 'macos': 'cp39'}
+elif sys.version_info.major == 3 and sys.version_info.minor == 10:
+  ABIS = {'linux': 'cp310', 'windows': 'cp310', 'macos': 'cp310'}
+elif sys.version_info.major == 3 and sys.version_info.minor == 11:
+  ABIS = {'linux': 'cp311', 'windows': 'cp311', 'macos': 'cp311'}
+else:
+  raise ValueError('Only python versions 3.7-3.11 are supported.')
 
 # Config directory to use for tests.
 TEST_CONFIG_DIR = os.path.join('configs', 'test')
@@ -49,9 +65,10 @@ TEST_APP_ID = 'test-clusterfuzz'
 TEST_APP_ID_WITH_DEV_PREFIX = 'dev~' + TEST_APP_ID
 
 DEV_APPSERVER_PORT = 9000
-DEV_APPSERVER_HOST = 'localhost:' + str(DEV_APPSERVER_PORT)
+DEV_APPSERVER_ADDR = '0.0.0.0'
+DEV_APPSERVER_HOST = DEV_APPSERVER_ADDR + ':' + str(DEV_APPSERVER_PORT)
 
-CRON_SERVICE_PORT = 9001
+CRON_SERVICE_PORT = 9009
 CRON_SERVICE_HOST = 'localhost:' + str(CRON_SERVICE_PORT)
 
 DEV_APPSERVER_ADMIN_PORT = 9002

@@ -13,9 +13,11 @@
 # limitations under the License.
 """Handler that serves the testcase file."""
 
-import urllib2
+import urllib.parse
 
-from google_cloud_utils import blobs
+from flask import request
+
+from clusterfuzz._internal.google_cloud_utils import blobs
 from handlers import base_handler
 from libs import access
 from libs import gcs
@@ -37,10 +39,10 @@ def get_testcase_blob_info(testcase):
     using_minimized_keys = False
 
   if not blob_key:
-    raise helpers.EarlyExitException(
+    raise helpers.EarlyExitError(
         "The testcase (%d) doesn't have fuzzed keys." % testcase.key.id(), 400)
 
-  blob_key = str(urllib2.unquote(blob_key))
+  blob_key = str(urllib.parse.unquote(blob_key))
 
   blob_info = blobs.get_blob_info(blob_key)
   return blob_info, using_minimized_keys
@@ -48,7 +50,7 @@ def get_testcase_blob_info(testcase):
 
 def get(self):
   """Get testcase file and write it to the handler."""
-  testcase_id = self.request.get('id')
+  testcase_id = request.get('id')
   testcase = access.check_access_and_get_testcase(testcase_id)
 
   blob_info, _ = get_testcase_blob_info(testcase)
@@ -57,14 +59,15 @@ def get(self):
       testcase.key.id(), blob_info.filename[-PREVIEW_BLOB_FILENAME_LENTGH:])
 
   content_disposition = str('attachment; filename=%s' % save_as_filename)
-  self.serve_gcs_object(blob_info.bucket, blob_info.object_path,
-                        content_disposition)
+  return self.serve_gcs_object(blob_info.bucket, blob_info.object_path,
+                               content_disposition)
 
 
 class Handler(base_handler.Handler, gcs.SignedGcsHandler):
   """Handler that gets the testcase file."""
 
+  @handler.get(handler.HTML)
   @handler.oauth
   def get(self):
     """Serve the testcase file."""
-    get(self)
+    return get(self)
